@@ -392,34 +392,34 @@ def nbrhosts(ansible_adhoc, tbinfo, creds, request):
     """
 
     devices = {}
-    if (not tbinfo['vm_base'] and 'tgen' in tbinfo['topo']['name']) or 'ptf' in tbinfo['topo']['name']:
-        logger.info("No VMs exist for this topology: {}".format(tbinfo['topo']['name']))
-        return devices
+    # if (not tbinfo['vm_base'] and 'tgen' in tbinfo['topo']['name']) or 'ptf' in tbinfo['topo']['name']:
+    #     logger.info("No VMs exist for this topology: {}".format(tbinfo['topo']['name']))
+    #     return devices
 
-    vm_base = int(tbinfo['vm_base'][2:])
-    neighbor_type = request.config.getoption("--neighbor_type")
+    # vm_base = int(tbinfo['vm_base'][2:])
+    # neighbor_type = request.config.getoption("--neighbor_type")
 
-    if not 'VMs' in tbinfo['topo']['properties']['topology']:
-        logger.info("No VMs exist for this topology: {}".format(tbinfo['topo']['properties']['topology']))
-        return devices
+    # if not 'VMs' in tbinfo['topo']['properties']['topology']:
+    #     logger.info("No VMs exist for this topology: {}".format(tbinfo['topo']['properties']['topology']))
+    #     return devices
 
-    for k, v in tbinfo['topo']['properties']['topology']['VMs'].items():
-        if neighbor_type == "eos":
-            devices[k] = {'host': EosHost(ansible_adhoc,
-                                        "VM%04d" % (vm_base + v['vm_offset']),
-                                        creds['eos_login'],
-                                        creds['eos_password'],
-                                        shell_user=creds['eos_root_user'] if 'eos_root_user' in creds else None,
-                                        shell_passwd=creds['eos_root_password'] if 'eos_root_password' in creds else None),
-                        'conf': tbinfo['topo']['properties']['configuration'][k]}
-        elif neighbor_type == "sonic":
-            devices[k] = {'host': SonicHost(ansible_adhoc,
-                                        "VM%04d" % (vm_base + v['vm_offset']),
-                                        ssh_user=creds['sonic_login'] if 'sonic_login' in creds else None,
-                                        ssh_passwd=creds['sonic_password'] if 'sonic_password' in creds else None),
-                        'conf': tbinfo['topo']['properties']['configuration'][k]}
-        else:
-            raise ValueError("Unknown neighbor type %s" % (neighbor_type, ))
+    # for k, v in tbinfo['topo']['properties']['topology']['VMs'].items():
+    #     if neighbor_type == "eos":
+    #         devices[k] = {'host': EosHost(ansible_adhoc,
+    #                                     "VM%04d" % (vm_base + v['vm_offset']),
+    #                                     creds['eos_login'],
+    #                                     creds['eos_password'],
+    #                                     shell_user=creds['eos_root_user'] if 'eos_root_user' in creds else None,
+    #                                     shell_passwd=creds['eos_root_password'] if 'eos_root_password' in creds else None),
+    #                     'conf': tbinfo['topo']['properties']['configuration'][k]}
+    #     elif neighbor_type == "sonic":
+    #         devices[k] = {'host': SonicHost(ansible_adhoc,
+    #                                     "VM%04d" % (vm_base + v['vm_offset']),
+    #                                     ssh_user=creds['sonic_login'] if 'sonic_login' in creds else None,
+    #                                     ssh_passwd=creds['sonic_password'] if 'sonic_password' in creds else None),
+    #                     'conf': tbinfo['topo']['properties']['configuration'][k]}
+    #     else:
+    #         raise ValueError("Unknown neighbor type %s" % (neighbor_type, ))
     return devices
 
 

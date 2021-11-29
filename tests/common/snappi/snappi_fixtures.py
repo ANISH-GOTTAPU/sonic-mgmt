@@ -429,3 +429,15 @@ def snappi_testbed_config(conn_graph_facts,
     pytest_assert(config_result is True, 'Fail to configure L3 interfaces')
 
     return config, port_config_list
+
+@pytest.fixture(scope="module")
+def snappi_ixnet_session(snappi_api):
+    from ixnetwork_restpy import *
+    session = SessionAssistant(
+        IpAddress=snappi_api._address,
+        RestPort=snappi_api._port,
+        UserName=snappi_api._username,
+        Password=snappi_api._password,
+        LogLevel=snappi_api._log_level,
+    )
+    return session
