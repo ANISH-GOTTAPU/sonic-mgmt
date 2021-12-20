@@ -15,7 +15,7 @@ def test_mka_functionality(snappi_ixnet_session,
                            fanout_graph_facts,
                            duthost):
     # DUT Config
-    # duthostMACsecConfigMkaFunctionality(duthost)
+    duthostMACsecConfigMkaFunctionality(duthost)
 
     # TGEN Config & Verify Test
     ixNetwork = snappi_ixnet_session.Session.Ixnetwork
@@ -103,8 +103,10 @@ def test_mka_functionality(snappi_ixnet_session,
     logger.info('Generating Traffic Item')
     for i in range(0, len(ixNetwork.Traffic.TrafficItem.find())):
         ixNetwork.Traffic.TrafficItem.find()[i].Generate()
+    time.sleep(5)
     logger.info('Applying Traffic')
     ixNetwork.Traffic.Apply()
+    time.sleep(5)
     logger.info('Starting Traffic')
     ixNetwork.Traffic.StartStatelessTrafficBlocking()
     time.sleep(20)
@@ -135,7 +137,7 @@ def test_macsec_impact(snappi_ixnet_session,
                        fanout_graph_facts,
                        duthost):
     # DUT Config
-    # duthostMACsecConfigImpact(duthost)
+    duthostMACsecConfigImpact(duthost)
 
     # Tgen Config and test
     ixNetwork = snappi_ixnet_session.Session.Ixnetwork
@@ -225,8 +227,10 @@ def test_macsec_impact(snappi_ixnet_session,
     logger.info('Generating Traffic Item')
     for i in range(0, len(ixNetwork.Traffic.TrafficItem.find())):
         ixNetwork.Traffic.TrafficItem.find()[i].Generate()
+    time.sleep(5)
     logger.info('Applying Traffic')
     ixNetwork.Traffic.Apply()
+    time.sleep(5)
     logger.info('Starting Traffic')
     ixNetwork.Traffic.StartStatelessTrafficBlocking()
     time.sleep(20)
@@ -268,11 +272,23 @@ def duthostMACsecConfigMkaFunctionality(duthost):
     # Enable MACsec profile in Ethernet4
     duthost.shell('redis-cli -n 4 hmset "PORT|Ethernet4" "macsec" "test_profile1"')
 
+    try:
+        # remove ip setting from interfaces in the previous test if any
+        duthost.shell("sudo config interface ip remove Ethernet0 20.1.1.2/24")
+        duthost.shell("sudo config interface ip remove Ethernet4 22.1.1.2/24")
+        duthost.shell("sudo config vlan member del 4 Ethernet0")
+        duthost.shell("sudo config vlan member del 4 Ethernet4")
+        duthost.shell("sudo config vlan del 4")
+    except:
+        pass
+
     # Configure IP interfaces on the port on both interfaces
     duthost.shell("sudo config interface ip add Ethernet4 22.1.1.2/24")
     duthost.shell("sudo config interface ip add Ethernet0 20.1.1.2/24")
 
     duthost.shell("ip macsec show")
+
+    time.sleep(10)
 
 
 def duthostMACsecConfigImpact(duthost):
@@ -291,9 +307,15 @@ def duthostMACsecConfigImpact(duthost):
     # # Enable MACsec profile in Ethernet4
     # duthost.shell('redis-cli -n 4 hmset "PORT|Ethernet4" "macsec" "test_profile1"')
 
-    # remove ip setting from interfaces in the previous test if any
-    duthost.shell("sudo config interface ip remove Ethernet0 20.1.1.2/24")
-    duthost.shell("sudo config interface ip remove Ethernet4 22.1.1.2/24")
+    try:
+        # remove ip setting from interfaces in the previous test if any
+        duthost.shell("sudo config interface ip remove Ethernet0 20.1.1.2/24")
+        duthost.shell("sudo config interface ip remove Ethernet4 22.1.1.2/24")
+        duthost.shell("sudo config vlan member del 4 Ethernet0")
+        duthost.shell("sudo config vlan member del 4 Ethernet4")
+        duthost.shell("sudo config vlan del 4")
+    except:
+        pass
 
     # add vlan and ip interfaces for the current test:
     duthost.shell("sudo config vlan add 4")
@@ -302,6 +324,7 @@ def duthostMACsecConfigImpact(duthost):
 
     duthost.shell("ip macsec show")
 
+    time.sleep(10)
 
 def printStats(ixNetwork, vName, printoptions={}):
     if isinstance(vName, list):
