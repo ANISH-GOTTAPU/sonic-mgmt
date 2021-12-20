@@ -440,4 +440,6 @@ def snappi_ixnet_session(snappi_api):
         Password=snappi_api._password,
         LogLevel=snappi_api._log_level,
     )
-    return session
+    yield session
+
+    session.Session.remove()

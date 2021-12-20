@@ -1,8 +1,4 @@
----
 # Specify all public mappings below
 lab: lab_connection_graph.xml
-example_ixia: example_ixia_connection_graph.xml
-
-
-
-# Specify all internal mappings below
+# snappi
+snappi-sonic: snappi_sonic_connection_graph.xml

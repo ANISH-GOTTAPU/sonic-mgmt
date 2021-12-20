@@ -1,110 +1,333 @@
 from tests.common.fixtures.conn_graph_facts import conn_graph_facts,\
     fanout_graph_facts
 from tests.common.snappi.snappi_fixtures import snappi_api_serv_ip, snappi_api_serv_port,\
-    snappi_api,snappi_ixnet_session
-from ixnetwork_restpy import *
+    snappi_api, snappi_ixnet_session
+from ixnetwork_restpy import Files, PortMapAssistant, StatViewAssistant
+import time
+from tabulate import tabulate
+import logging
+import pytest
+logger = logging.getLogger(__name__)
 
-def test_macsec_poc(snappi_ixnet_session,
-                    conn_graph_facts,
-                    fanout_graph_facts,
-                    duthost):
+
+def test_mka_functionality(snappi_ixnet_session,
+                           conn_graph_facts,
+                           fanout_graph_facts,
+                           duthost):
+    # DUT Config
+    # duthostMACsecConfigMkaFunctionality(duthost)
+
+    # TGEN Config & Verify Test
     ixNetwork = snappi_ixnet_session.Session.Ixnetwork
-    portMap = snappi_ixnet_session.PortMapAssistant()
-    vport = dict()
-    portList = [['10.39.69.243', 1,1], ['10.39.69.243', 1, 2]]
-    for index,port in enumerate(portList):
-        portName = 'Port_{}'.format(index+1)
-        vport[portName] = portMap.Map(IpAddress=port[0], CardId=port[1], PortId=port[2], Name=portName)
+    logger.info("Loading Configuration")
+    ixNetwork.LoadConfig(Files('Test8.1_mka-functionality_Test_pairWiseCA.ixncfg', local_file=True))
+    logger.info('connect the virtual ports to test ports')
 
-    portMap.Connect(True)
-    ixNetwork.info('Creating Topology Group 1')
-    topology1 = ixNetwork.Topology.add(Name='Topo1', Ports=vport['Port_1'])
-    deviceGroup1 = topology1.DeviceGroup.add(Name='DG1', Multiplier='3')
-    ethernet1 = deviceGroup1.Ethernet.add(Name='Eth1')
-    ethernet1.Mac.Increment(start_value='00:01:01:01:00:01', step_value='00:00:00:00:00:01')
-    ethernet1.EnableVlans.Single(True)
+    port_map = PortMapAssistant(ixNetwork)
+    port_map.Map(Location='10.36.77.157;1;13', Name='Ethernet - 001')
+    port_map.Map(Location='10.36.77.157;1;14', Name='Ethernet - 002')
+    logger.info(port_map)
+    port_map.Connect(ForceOwnership=True)
 
-    ixNetwork.info('Configuring vlanID')
-    vlanObj = ethernet1.Vlan.find()[0].VlanId.Increment(start_value=103, step_value=0)
+    test_ports = ixNetwork.Vport.find()
+    logger.info('Starting All protocols')
+    ixNetwork.StartAllProtocols()
+    time.sleep(10)
 
-    ixNetwork.info('Configuring IPv4')
-    ipv4 = ethernet1.Ipv4.add(Name='Ipv4')
-    ipv4.Address.Increment(start_value='1.1.1.1', step_value='0.0.0.1')
-    ipv4.GatewayIp.Increment(start_value='1.1.1.4', step_value='0.0.0.0')
+    logger.info('Verifying Protocol Summary')
+    protocols_Summary = StatViewAssistant(ixNetwork, 'Protocols Summary')
+    for i in range(0, len(protocols_Summary.Rows)):
+        if int(protocols_Summary.Rows[i]['Sessions Down']) != 0:
+            logger.info(" {} Sessions are Down".format(protocols_Summary.Rows[i]['Protocol Type']))
+        else:
+            logger.info(" {} Sessions are UP".format(protocols_Summary.Rows[i]['Protocol Type']))
 
-    ixNetwork.info('Configuring BgpIpv4Peer 1')
-    bgp1 = ipv4.BgpIpv4Peer.add(Name='Bgp1')
-    bgp1.DutIp.Increment(start_value='1.1.1.4', step_value='0.0.0.1')
-    bgp1.Type.Single('external')
-    bgp1.LocalAs2Bytes.Increment(start_value=101, step_value=0)
+    printStats(ixNetwork, "Protocols Summary", {"Protocols Summary": {'transpose': False},})
+    MACsec_global = StatViewAssistant(ixNetwork, 'MACsec Global Port Statistics')
+    MACsec_per_port = StatViewAssistant(ixNetwork, 'MACsec Per Port')
+    MKA_per_port = StatViewAssistant(ixNetwork, 'MKA Per Port')
+    logger.info('\n')
+    for i in range(0, len(test_ports)):
+        if int(MACsec_global.Rows[i]['Encrypted Byte Rx']) > 0:
+            logger.info('Encrypted Byte Rx is > 0 for {}!!'.format(test_ports[i].Name))
+        else:
+            if int(MACsec_per_port.Rows[i]['Valid Packet Rx']) > 0:
+                logger.info('Valid Packet Rx > 0 for {}!!'.format(test_ports[i].Name))
+            else:
+                logger.info('!!  Valid Packet Rx = 0 for {}!!'.format(test_ports[i].Name))
+            if int(MKA_per_port.Rows[i]['MKPDU Tx']) > 0 and int(MKA_per_port.Rows[i]['MKPDU Rx']) > 0:
+                logger.info('MKPDU Tx > 0 and MKPDU Rx > 0 for {}!!'.format(test_ports[i].Name))
+            else:
+                logger.info('MKPDU Tx = 0 and MKPDU Rx = 0 for {}!!'.format(test_ports[i].Name))
+    logger.info('\n')
+    printStats(ixNetwork, "MACsec Global Port Statistics",
+               {"MACsec Global Port Statistics": {'transpose': False},})
+    table = []
+    table1 = [MACsec_global.Rows[0]['Stat Name'],
+              MACsec_global.Rows[0]['Port Name'],
+              MACsec_global.Rows[0]['Protected Packet Tx'],
+              MACsec_global.Rows[0]['Encrypted Packet Tx'],
+              MACsec_global.Rows[0]['Non-MACsec Packet Tx'],
+              MACsec_global.Rows[0]['Protected Packet Rx'],
+              MACsec_global.Rows[0]['Encrypted Packet Rx'],
+              MACsec_global.Rows[0]['Non-MACsec Packet Rx'],
+              MACsec_global.Rows[0]['Unknown SCI/SA Accepted'],
+              MACsec_global.Rows[0]['Unknown SCI/SA Discarded']]
+    table2 = [MACsec_global.Rows[1]['Stat Name'],
+              MACsec_global.Rows[1]['Port Name'],
+              MACsec_global.Rows[1]['Protected Packet Tx'],
+              MACsec_global.Rows[1]['Encrypted Packet Tx'],
+              MACsec_global.Rows[1]['Non-MACsec Packet Tx'],
+              MACsec_global.Rows[1]['Protected Packet Rx'],
+              MACsec_global.Rows[1]['Encrypted Packet Rx'],
+              MACsec_global.Rows[1]['Non-MACsec Packet Rx'],
+              MACsec_global.Rows[1]['Unknown SCI/SA Accepted'],
+              MACsec_global.Rows[1]['Unknown SCI/SA Discarded']]
+    table.append(table1)
+    table.append(table2)
+    columns = ['Stat Name',
+               'Port Name',
+               'Protected Packet Tx',
+               'Encrypted Packet Tx',
+               'Non-MACsec Packet Tx',
+               'Protected Packet Rx',
+               'Encrypted Packet Rx',
+               'Non-MACsec Packet Rx',
+               'Unknown SCI/SA Accepted',
+               'Unknown SCI/SA Discarded']
+    logger.info('MACsec Global Port Statistics')
+    logger.info("\n%s" % tabulate(table, headers=columns, tablefmt="psql"))
+    printStats(ixNetwork, "MACsec Per Port",
+               {"MACsec Per Port": {'transpose': False}})
 
-    ixNetwork.info('Configuring Network Group 1')
-    networkGroup1 = deviceGroup1.NetworkGroup.add(Name='BGP-Routes1', Multiplier='100')
-    ipv4PrefixPool = networkGroup1.Ipv4PrefixPools.add(NumberOfAddresses='1')
-    ipv4PrefixPool.NetworkAddress.Increment(start_value='10.10.0.1', step_value='0.0.0.1')
-    ipv4PrefixPool.PrefixLength.Single(32)
-
-    ixNetwork.info('Creating Topology Group 2')
-    topology2 = ixNetwork.Topology.add(Name='Topo2', Ports=vport['Port_2'])
-    deviceGroup2 = topology2.DeviceGroup.add(Name='DG2', Multiplier='3')
-
-    ethernet2 = deviceGroup2.Ethernet.add(Name='Eth2')
-    ethernet2.Mac.Increment(start_value='00:01:01:02:00:01', step_value='00:00:00:00:00:01')
-    ethernet2.EnableVlans.Single(True)
-
-    ixNetwork.info('Configuring vlanID')
-    vlanObj = ethernet2.Vlan.find()[0].VlanId.Increment(start_value=103, step_value=0)
-
-    ixNetwork.info('Configuring IPv4 2')
-    ipv4 = ethernet2.Ipv4.add(Name='Ipv4-2')
-    ipv4.Address.Increment(start_value='1.1.1.4', step_value='0.0.0.1')
-    ipv4.GatewayIp.Increment(start_value='1.1.1.1', step_value='0.0.0.0')
-  
-    ixNetwork.info('Configuring BgpIpv4Peer 2')
-    bgp2 = ipv4.BgpIpv4Peer.add(Name='Bgp2')
-    bgp2.DutIp.Increment(start_value='1.1.1.1', step_value='0.0.0.1')
-    bgp2.Type.Single('external')
-    bgp2.LocalAs2Bytes.Increment(start_value=102, step_value=0)
-
-    ixNetwork.info('Configuring Network Group 2')
-    networkGroup2 = deviceGroup2.NetworkGroup.add(Name='BGP-Routes2', Multiplier='100')
-    ipv4PrefixPool = networkGroup2.Ipv4PrefixPools.add(NumberOfAddresses='1')
-    ipv4PrefixPool.NetworkAddress.Increment(start_value='20.20.0.1', step_value='0.0.0.1')
-    ipv4PrefixPool.PrefixLength.Single(32)
-
-    ixNetwork.StartAllProtocols(Arg1='sync')
-
-    ixNetwork.info('Verify protocol sessions\n')
-    protocolSummary = snappi_ixnet_session.StatViewAssistant('Protocols Summary')
-    protocolSummary.CheckCondition('Sessions Not Started', protocolSummary.EQUAL, 0)
-    protocolSummary.CheckCondition('Sessions Down', protocolSummary.EQUAL, 0)
-    ixNetwork.info(protocolSummary)
-
-    ixNetwork.info('Create Traffic Item')
-    trafficItem = ixNetwork.Traffic.TrafficItem.add(Name='BGP Traffic', BiDirectional=False, TrafficType='ipv4')
-
-    ixNetwork.info('Add endpoint flow group')
-    trafficItem.EndpointSet.add(Sources=topology1, Destinations=topology2)
-
-    # Note: A Traffic Item could have multiple EndpointSets (Flow groups).
-    #       Therefore, ConfigElement is a list.
-    ixNetwork.info('Configuring config elements')
-    configElement = trafficItem.ConfigElement.find()[0]
-    configElement.FrameRate.update(Type='percentLineRate', Rate=50)
-    configElement.FrameRateDistribution.PortDistribution = 'splitRateEvenly'
-    configElement.FrameSize.FixedSize = 128
-    trafficItem.Tracking.find()[0].TrackBy = ['flowGroup0']
-    
-    trafficItem.Generate()
+    logger.info('Generating Traffic Item')
+    for i in range(0, len(ixNetwork.Traffic.TrafficItem.find())):
+        ixNetwork.Traffic.TrafficItem.find()[i].Generate()
+    logger.info('Applying Traffic')
     ixNetwork.Traffic.Apply()
+    logger.info('Starting Traffic')
     ixNetwork.Traffic.StartStatelessTrafficBlocking()
+    time.sleep(20)
+    tiStatistics = StatViewAssistant(ixNetwork, 'Traffic Item Statistics')
+    for i in range(0, len(tiStatistics.Rows)):
+        if float(tiStatistics.Rows[i]['Loss %']) <= 0.3:
+            logger.info('PASS, Encrypted {} is flowing with {} percent loss'.format(tiStatistics.Rows[i]['Traffic Item'],float(tiStatistics.Rows[i]['Loss %'])))
+        else:
+            pytest.fail('FAIL, Encrypted {} is flowing with {} percent loss'.format(tiStatistics.Rows[i]['Traffic Item'],float(tiStatistics.Rows[i]['Loss %'])))
 
-    flowStatistics = snappi_ixnet_session.StatViewAssistant('Flow Statistics')
+    printStats(ixNetwork, "MACsec Per Port",
+               {"MACsec Per Port": {'transpose': False}})
+    table = []
+    for i in range(0, len(ixNetwork.Traffic.TrafficItem.find())):
+        table1 = []
+        table1.append(tiStatistics.Rows[i]['Tx Frames'])
+        table1.append(tiStatistics.Rows[i]['Rx Frames'])
+        table1.append(tiStatistics.Rows[i]['Loss %'])
+        table.append(table1)
+        columns = ['Tx Frames', 'Rx Frames', 'Loss%']
+    logger.info('Traffic Item Statistics')
+    logger.info("\n%s" % tabulate(table, headers=columns, tablefmt="psql"))
+    logger.info('Done')
 
-    ixNetwork.info('{}\n'.format(flowStatistics))
 
-    for rowNumber,flowStat in enumerate(flowStatistics.Rows):
-        ixNetwork.info('\n\nSTATS: {}\n\n'.format(flowStat))
-        ixNetwork.info('\nRow:{}  TxPort:{}  RxPort:{}  TxFrames:{}  RxFrames:{}\n'.format(
-            rowNumber, flowStat['Tx Port'], flowStat['Rx Port'],
-            flowStat['Tx Frames'], flowStat['Rx Frames']))
+def test_macsec_impact(snappi_ixnet_session,
+                       conn_graph_facts,
+                       fanout_graph_facts,
+                       duthost):
+    # DUT Config
+    # duthostMACsecConfigImpact(duthost)
+
+    # Tgen Config and test
+    ixNetwork = snappi_ixnet_session.Session.Ixnetwork
+    logger.info("Loading Configuration")
+    ixNetwork.LoadConfig(Files('Test9.1_macsec_impact_L2_traffic.ixncfg', local_file=True))
+    logger.info('connect the virtual ports to test ports')
+
+    port_map = PortMapAssistant(ixNetwork)
+    port_map.Map(Location='10.36.77.157;1;13', Name='Ethernet - 001')
+    port_map.Map(Location='10.36.77.157;1;14', Name='Ethernet - 002')
+    logger.info(port_map)
+    port_map.Connect(ForceOwnership=True)
+
+    test_ports = ixNetwork.Vport.find()
+    logger.info('Starting All protocols')
+    ixNetwork.StartAllProtocols()
+    time.sleep(10)
+
+    logger.info('Verifying Protocol Summary')
+    protocols_Summary = StatViewAssistant(ixNetwork, 'Protocols Summary')
+    for i in range(0, len(protocols_Summary.Rows)):
+        if int(protocols_Summary.Rows[i]['Sessions Down']) != 0:
+            logger.info(" {} Sessions are Down".format(protocols_Summary.Rows[i]['Protocol Type']))
+        else:
+            logger.info(" {} Sessions are UP".format(protocols_Summary.Rows[i]['Protocol Type']))
+
+    printStats(ixNetwork, "Protocols Summary",
+               {"Protocols Summary": {'transpose': False}})
+    MACsec_global = StatViewAssistant(ixNetwork,
+                                      'MACsec Global Port Statistics')
+    MACsec_per_port = StatViewAssistant(ixNetwork, 'MACsec Per Port')
+    MKA_per_port = StatViewAssistant(ixNetwork, 'MKA Per Port')
+    logger.info('\n')
+    for i in range(0, len(test_ports)):
+        if int(MACsec_global.Rows[i]['Encrypted Byte Rx']) > 0:
+            logger.info('Encrypted Byte Rx is > 0 for {}!!'.format(test_ports[i].Name))
+        else:
+            if int(MACsec_per_port.Rows[i]['Valid Packet Rx']) > 0:
+                logger.info('Valid Packet Rx > 0 for {}!!'.format(test_ports[i].Name))
+            else:
+                logger.info('!!  Valid Packet Rx = 0 for {}!!'.format(test_ports[i].Name))
+            if int(MKA_per_port.Rows[i]['MKPDU Tx']) > 0 and int(MKA_per_port.Rows[i]['MKPDU Rx']) > 0:
+                logger.info('MKPDU Tx > 0 and MKPDU Rx > 0 for {}!!'.format(test_ports[i].Name))
+            else:
+                logger.info('MKPDU Tx = 0 and MKPDU Rx = 0 for {}!!'.format(test_ports[i].Name))
+    logger.info('\n')
+    printStats(ixNetwork, "MACsec Global Port Statistics",
+               {"MACsec Global Port Statistics": {'transpose': False}})
+    table = []
+    table1 = [MACsec_global.Rows[0]['Stat Name'],
+              MACsec_global.Rows[0]['Port Name'],
+              MACsec_global.Rows[0]['Protected Packet Tx'],
+              MACsec_global.Rows[0]['Encrypted Packet Tx'],
+              MACsec_global.Rows[0]['Non-MACsec Packet Tx'],
+              MACsec_global.Rows[0]['Protected Packet Rx'],
+              MACsec_global.Rows[0]['Encrypted Packet Rx'],
+              MACsec_global.Rows[0]['Non-MACsec Packet Rx'],
+              MACsec_global.Rows[0]['Unknown SCI/SA Accepted'],
+              MACsec_global.Rows[0]['Unknown SCI/SA Discarded']]
+    table2 = [MACsec_global.Rows[1]['Stat Name'],
+              MACsec_global.Rows[1]['Port Name'],
+              MACsec_global.Rows[1]['Protected Packet Tx'],
+              MACsec_global.Rows[1]['Encrypted Packet Tx'],
+              MACsec_global.Rows[1]['Non-MACsec Packet Tx'],
+              MACsec_global.Rows[1]['Protected Packet Rx'],
+              MACsec_global.Rows[1]['Encrypted Packet Rx'],
+              MACsec_global.Rows[1]['Non-MACsec Packet Rx'],
+              MACsec_global.Rows[1]['Unknown SCI/SA Accepted'],
+              MACsec_global.Rows[1]['Unknown SCI/SA Discarded']]
+    table.append(table1)
+    table.append(table2)
+    columns = ['Stat Name',
+               'Port Name',
+               'Protected Packet Tx',
+               'Encrypted Packet Tx',
+               'Non-MACsec Packet Tx',
+               'Protected Packet Rx',
+               'Encrypted Packet Rx',
+               'Non-MACsec Packet Rx',
+               'Unknown SCI/SA Accepted',
+               'Unknown SCI/SA Discarded']
+    logger.info('MACsec Global Port Statistics')
+    logger.info("\n%s" % tabulate(table, headers=columns, tablefmt="psql"))
+    printStats(ixNetwork, "MACsec Per Port", 
+               {"MACsec Per Port": {'transpose': False}})
+
+    logger.info('Generating Traffic Item')
+    for i in range(0, len(ixNetwork.Traffic.TrafficItem.find())):
+        ixNetwork.Traffic.TrafficItem.find()[i].Generate()
+    logger.info('Applying Traffic')
+    ixNetwork.Traffic.Apply()
+    logger.info('Starting Traffic')
+    ixNetwork.Traffic.StartStatelessTrafficBlocking()
+    time.sleep(20)
+    tiStatistics = StatViewAssistant(ixNetwork, 'Traffic Item Statistics')
+    for i in range(0, len(tiStatistics.Rows)):
+        if float(tiStatistics.Rows[i]['Loss %']) <= 0.3:
+            logger.info('PASS, Encrypted {} is flowing with {} percent loss'.format(tiStatistics.Rows[i]['Traffic Item'],float(tiStatistics.Rows[i]['Loss %'])))
+        else:
+            pytest.fail('FAIL, Encrypted {} is flowing with {} percent loss'.format(tiStatistics.Rows[i]['Traffic Item'],float(tiStatistics.Rows[i]['Loss %'])))
+
+    printStats(ixNetwork, "MACsec Per Port",
+               {"MACsec Per Port": {'transpose': False}})
+    table = []
+    for i in range(0, len(ixNetwork.Traffic.TrafficItem.find())):
+        table1 = []
+        table1.append(tiStatistics.Rows[i]['Tx Frames'])
+        table1.append(tiStatistics.Rows[i]['Rx Frames'])
+        table1.append(tiStatistics.Rows[i]['Loss %'])
+        table.append(table1)
+        columns = ['Tx Frames', 'Rx Frames', 'Loss%']
+    logger.info('Traffic Item Statistics')
+    logger.info("\n%s" % tabulate(table, headers=columns, tablefmt="psql"))
+    logger.info('Done')
+
+
+def duthostMACsecConfigMkaFunctionality(duthost):
+    # Enable MACSec Feature
+    duthost.shell("sudo config feature state macsec enabled")
+
+    # Add MACSec Profile
+    duthost.shell('redis-cli -n 4 hmset "MACSEC_PROFILE|test_profile" "priority" "64" "cipher_suite" "GCM-AES-128" "primary_cak" "0123456789ABCDEF0123456789ABCDEF" "primary_ckn" "6162636465666768696A6B6C6D6E6F707172737475767778797A303132333435" "fallback_cak" "" "fallback_ckn" "" "policy" "security" "enable_replay_protect" "false" "replay_window" "0" "send_sci" "true" "rekey_period" "0"')
+
+    # Enable MACsec profile in Ethernet0
+    duthost.shell('redis-cli -n 4 hmset "PORT|Ethernet0" "macsec" "test_profile"')
+
+    # Add a MACsec profile1
+    duthost.shell('redis-cli -n 4 hmset "MACSEC_PROFILE|test_profile1" "priority" "64" "cipher_suite" "GCM-AES-128" "primary_cak" "AA23456789ABCDEF0123456789ABCDAA" "primary_ckn" "AA62636465666768696A6B6C6D6E6F707172737475767778797A3031323334AA" "fallback_cak" "" "fallback_ckn" "" "policy" "security" "enable_replay_protect" "false" "replay_window" "0" "send_sci" "true" "rekey_period" "0"')
+
+    # Enable MACsec profile in Ethernet4
+    duthost.shell('redis-cli -n 4 hmset "PORT|Ethernet4" "macsec" "test_profile1"')
+
+    # Configure IP interfaces on the port on both interfaces
+    duthost.shell("sudo config interface ip add Ethernet4 22.1.1.2/24")
+    duthost.shell("sudo config interface ip add Ethernet0 20.1.1.2/24")
+
+    duthost.shell("ip macsec show")
+
+
+def duthostMACsecConfigImpact(duthost):
+    # # Enable MACSec Feature
+    # duthost.shell("sudo config feature state macsec enabled")
+
+    # # Add MACSec Profile
+    # duthost.shell('redis-cli -n 4 hmset "MACSEC_PROFILE|test_profile" "priority" "64" "cipher_suite" "GCM-AES-128" "primary_cak" "0123456789ABCDEF0123456789ABCDEF" "primary_ckn" "6162636465666768696A6B6C6D6E6F707172737475767778797A303132333435" "fallback_cak" "" "fallback_ckn" "" "policy" "security" "enable_replay_protect" "false" "replay_window" "0" "send_sci" "true" "rekey_period" "0"')
+
+    # # Enable MACsec profile in Ethernet0
+    # duthost.shell('redis-cli -n 4 hmset "PORT|Ethernet0" "macsec" "test_profile"')
+
+    # # Add a MACsec profile1
+    # duthost.shell('redis-cli -n 4 hmset "MACSEC_PROFILE|test_profile1" "priority" "64" "cipher_suite" "GCM-AES-128" "primary_cak" "AA23456789ABCDEF0123456789ABCDAA" "primary_ckn" "AA62636465666768696A6B6C6D6E6F707172737475767778797A3031323334AA" "fallback_cak" "" "fallback_ckn" "" "policy" "security" "enable_replay_protect" "false" "replay_window" "0" "send_sci" "true" "rekey_period" "0"')
+
+    # # Enable MACsec profile in Ethernet4
+    # duthost.shell('redis-cli -n 4 hmset "PORT|Ethernet4" "macsec" "test_profile1"')
+
+    # remove ip setting from interfaces in the previous test if any
+    duthost.shell("sudo config interface ip remove Ethernet0 20.1.1.2/24")
+    duthost.shell("sudo config interface ip remove Ethernet4 22.1.1.2/24")
+
+    # add vlan and ip interfaces for the current test:
+    duthost.shell("sudo config vlan add 4")
+    duthost.shell("sudo config vlan member add -u 4 Ethernet0")
+    duthost.shell("sudo config vlan member add -u 4 Ethernet4")
+
+    duthost.shell("ip macsec show")
+
+
+def printStats(ixNetwork, vName, printoptions={}):
+    if isinstance(vName, list):
+        [printStats(view, printoptions) for view in vName]
+    else:
+        transpose = True
+        try: transpose = printoptions[vName]["transpose"]
+        except: pass
+        view = StatViewAssistant(ixNetwork, vName)
+        data = view.Rows.RawData
+        columnCaptions = view.ColumnHeaders
+        cheader = columnCaptions[:]
+        
+        if vName in printoptions and "toprint" in printoptions[vName]:
+            cheader = printoptions[vName]["toprint"]
+        if vName in printoptions  and 'nottoprint' in printoptions[vName]:
+            [cheader.remove(st) for st in printoptions[vName]['nottoprint']]
+
+        rows = []
+        for row in data:
+            tmp = [row[columnCaptions.index(col)] for col in cheader]
+            rows.append(tmp[:])
+
+        if transpose:
+            rows.insert(0, cheader)
+            rows = list(zip(*rows))
+            cheader = []
+        logger.info('\n"%s"\n' % (vName,)+tabulate(rows, headers=cheader, tablefmt="psql"))
+        logger.info(len(data))
