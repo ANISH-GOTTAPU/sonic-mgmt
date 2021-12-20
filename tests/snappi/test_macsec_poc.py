@@ -258,71 +258,67 @@ def test_macsec_impact(snappi_ixnet_session,
 
 def duthostMACsecConfigMkaFunctionality(duthost):
     # Enable MACSec Feature
-    duthost.shell("sudo config feature state macsec enabled")
+    send_cmd(duthost, "sudo config feature state macsec enabled")
 
     # Add MACSec Profile
-    duthost.shell('redis-cli -n 4 hmset "MACSEC_PROFILE|test_profile" "priority" "64" "cipher_suite" "GCM-AES-128" "primary_cak" "0123456789ABCDEF0123456789ABCDEF" "primary_ckn" "6162636465666768696A6B6C6D6E6F707172737475767778797A303132333435" "fallback_cak" "" "fallback_ckn" "" "policy" "security" "enable_replay_protect" "false" "replay_window" "0" "send_sci" "true" "rekey_period" "0"')
+    send_cmd(duthost, 'redis-cli -n 4 hmset "MACSEC_PROFILE|test_profile" "priority" "64" "cipher_suite" "GCM-AES-128" "primary_cak" "0123456789ABCDEF0123456789ABCDEF" "primary_ckn" "6162636465666768696A6B6C6D6E6F707172737475767778797A303132333435" "fallback_cak" "" "fallback_ckn" "" "policy" "security" "enable_replay_protect" "false" "replay_window" "0" "send_sci" "true" "rekey_period" "0"')
 
     # Enable MACsec profile in Ethernet0
-    duthost.shell('redis-cli -n 4 hmset "PORT|Ethernet0" "macsec" "test_profile"')
+    send_cmd(duthost, 'redis-cli -n 4 hmset "PORT|Ethernet0" "macsec" "test_profile"')
 
     # Add a MACsec profile1
-    duthost.shell('redis-cli -n 4 hmset "MACSEC_PROFILE|test_profile1" "priority" "64" "cipher_suite" "GCM-AES-128" "primary_cak" "AA23456789ABCDEF0123456789ABCDAA" "primary_ckn" "AA62636465666768696A6B6C6D6E6F707172737475767778797A3031323334AA" "fallback_cak" "" "fallback_ckn" "" "policy" "security" "enable_replay_protect" "false" "replay_window" "0" "send_sci" "true" "rekey_period" "0"')
+    send_cmd(duthost, 'redis-cli -n 4 hmset "MACSEC_PROFILE|test_profile1" "priority" "64" "cipher_suite" "GCM-AES-128" "primary_cak" "AA23456789ABCDEF0123456789ABCDAA" "primary_ckn" "AA62636465666768696A6B6C6D6E6F707172737475767778797A3031323334AA" "fallback_cak" "" "fallback_ckn" "" "policy" "security" "enable_replay_protect" "false" "replay_window" "0" "send_sci" "true" "rekey_period" "0"')
 
     # Enable MACsec profile in Ethernet4
-    duthost.shell('redis-cli -n 4 hmset "PORT|Ethernet4" "macsec" "test_profile1"')
+    send_cmd(duthost, 'redis-cli -n 4 hmset "PORT|Ethernet4" "macsec" "test_profile1"')
 
-    try:
-        # remove ip setting from interfaces in the previous test if any
-        duthost.shell("sudo config interface ip remove Ethernet0 20.1.1.2/24")
-        duthost.shell("sudo config interface ip remove Ethernet4 22.1.1.2/24")
-        duthost.shell("sudo config vlan member del 4 Ethernet0")
-        duthost.shell("sudo config vlan member del 4 Ethernet4")
-        duthost.shell("sudo config vlan del 4")
-    except:
-        pass
+    # remove ip setting from interfaces in the previous test if any
+    send_cmd(duthost, "sudo config interface ip remove Ethernet0 20.1.1.2/24")
+    send_cmd(duthost, "sudo config interface ip remove Ethernet4 22.1.1.2/24")
+    send_cmd(duthost, "sudo config vlan member del 4 Ethernet0")
+    send_cmd(duthost, "sudo config vlan member del 4 Ethernet4")
+    send_cmd(duthost, "sudo config vlan del 4")
 
     # Configure IP interfaces on the port on both interfaces
-    duthost.shell("sudo config interface ip add Ethernet4 22.1.1.2/24")
-    duthost.shell("sudo config interface ip add Ethernet0 20.1.1.2/24")
+    send_cmd(duthost, "sudo config interface ip add Ethernet4 22.1.1.2/24")
+    send_cmd(duthost, "sudo config interface ip add Ethernet0 20.1.1.2/24")
 
-    duthost.shell("ip macsec show")
+    send_cmd(duthost, "ip macsec show")
 
     time.sleep(10)
 
 
 def duthostMACsecConfigImpact(duthost):
     # # Enable MACSec Feature
-    # duthost.shell("sudo config feature state macsec enabled")
+    # send_cmd(duthost,"sudo config feature state macsec enabled")
 
     # # Add MACSec Profile
-    # duthost.shell('redis-cli -n 4 hmset "MACSEC_PROFILE|test_profile" "priority" "64" "cipher_suite" "GCM-AES-128" "primary_cak" "0123456789ABCDEF0123456789ABCDEF" "primary_ckn" "6162636465666768696A6B6C6D6E6F707172737475767778797A303132333435" "fallback_cak" "" "fallback_ckn" "" "policy" "security" "enable_replay_protect" "false" "replay_window" "0" "send_sci" "true" "rekey_period" "0"')
+    # send_cmd(duthost,'redis-cli -n 4 hmset "MACSEC_PROFILE|test_profile" "priority" "64" "cipher_suite" "GCM-AES-128" "primary_cak" "0123456789ABCDEF0123456789ABCDEF" "primary_ckn" "6162636465666768696A6B6C6D6E6F707172737475767778797A303132333435" "fallback_cak" "" "fallback_ckn" "" "policy" "security" "enable_replay_protect" "false" "replay_window" "0" "send_sci" "true" "rekey_period" "0"')
 
     # # Enable MACsec profile in Ethernet0
-    # duthost.shell('redis-cli -n 4 hmset "PORT|Ethernet0" "macsec" "test_profile"')
+    # send_cmd(duthost,'redis-cli -n 4 hmset "PORT|Ethernet0" "macsec" "test_profile"')
 
     # # Add a MACsec profile1
-    # duthost.shell('redis-cli -n 4 hmset "MACSEC_PROFILE|test_profile1" "priority" "64" "cipher_suite" "GCM-AES-128" "primary_cak" "AA23456789ABCDEF0123456789ABCDAA" "primary_ckn" "AA62636465666768696A6B6C6D6E6F707172737475767778797A3031323334AA" "fallback_cak" "" "fallback_ckn" "" "policy" "security" "enable_replay_protect" "false" "replay_window" "0" "send_sci" "true" "rekey_period" "0"')
+    # send_cmd(duthost,'redis-cli -n 4 hmset "MACSEC_PROFILE|test_profile1" "priority" "64" "cipher_suite" "GCM-AES-128" "primary_cak" "AA23456789ABCDEF0123456789ABCDAA" "primary_ckn" "AA62636465666768696A6B6C6D6E6F707172737475767778797A3031323334AA" "fallback_cak" "" "fallback_ckn" "" "policy" "security" "enable_replay_protect" "false" "replay_window" "0" "send_sci" "true" "rekey_period" "0"')
 
     # # Enable MACsec profile in Ethernet4
-    # duthost.shell('redis-cli -n 4 hmset "PORT|Ethernet4" "macsec" "test_profile1"')
+    # send_cmd(duthost,'redis-cli -n 4 hmset "PORT|Ethernet4" "macsec" "test_profile1"')
 
-    try:
-        # remove ip setting from interfaces in the previous test if any
-        duthost.shell("sudo config interface ip remove Ethernet0 20.1.1.2/24")
-        duthost.shell("sudo config interface ip remove Ethernet4 22.1.1.2/24")
-        duthost.shell("sudo config vlan member del 4 Ethernet0")
-        duthost.shell("sudo config vlan member del 4 Ethernet4")
-        duthost.shell("sudo config vlan del 4")
-    except:
-        pass
+
+    # remove ip setting from interfaces in the previous test if any
+    send_cmd(duthost, "sudo config interface ip remove Ethernet0 20.1.1.2/24")
+    send_cmd(duthost, "sudo config interface ip remove Ethernet4 22.1.1.2/24")
+    send_cmd(duthost, "sudo config vlan member del 4 Ethernet0")
+    send_cmd(duthost, "sudo config vlan member del 4 Ethernet4")
+    send_cmd(duthost, "sudo config vlan del 4")
+
 
     # add vlan and ip interfaces for the current test:
-    duthost.shell("sudo config vlan add 4")
-    duthost.shell("sudo config vlan member add -u 4 Ethernet0")
-    duthost.shell("sudo config vlan member add -u 4 Ethernet4")
+    send_cmd(duthost, "sudo config vlan add 4")
+    send_cmd(duthost, "sudo config vlan member add -u 4 Ethernet0")
+    send_cmd(duthost, "sudo config vlan member add -u 4 Ethernet4")
 
-    duthost.shell("ip macsec show")
+    send_cmd(duthost, "ip macsec show")
 
     time.sleep(10)
 
@@ -354,3 +350,10 @@ def printStats(ixNetwork, vName, printoptions={}):
             cheader = []
         logger.info('\n"%s"\n' % (vName,)+tabulate(rows, headers=cheader, tablefmt="psql"))
         logger.info(len(data))
+
+
+def send_cmd(duthost, cmd):
+    try:
+        duthost.shell(cmd)
+    except:
+        pass
