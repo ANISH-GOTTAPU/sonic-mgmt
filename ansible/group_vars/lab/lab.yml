@@ -7,6 +7,7 @@ ntp_servers: ['10.0.0.1', '10.0.0.2']
 
 # syslog variables
 syslog_servers: ['10.0.0.5', '10.0.0.6']
+#syslog_servers: ['11.11.11.11', '10.0.0.6']
 
 # dns variables
 dns_servers: ['10.0.0.5', '10.0.0.6']
@@ -28,9 +29,6 @@ tacacs_rw_user: test_rwuser
 tacacs_rw_user_passwd: '123456'
 tacacs_ro_user: test_rouser
 tacacs_ro_user_passwd: '123456'
-tacacs_jit_user: test_jituser
-tacacs_jit_user_passwd: '123456'
-tacacs_jit_user_membership: netuser
 
 # tacacs grous
 tacacs_group: 'testlab'
@@ -40,9 +38,6 @@ snmp_servers: ['10.0.0.9']
 
 # dhcp relay servers
 dhcp_servers: ['192.0.0.1', '192.0.0.2', '192.0.0.3', '192.0.0.4']
-
-# dhcpv6 relay servers
-dhcpv6_servers: ['fc02:2000::1', 'fc02:2000::2', 'fc02:2000::3', 'fc02:2000::4']
 
 # snmp variables
 snmp_rocommunity: public
@@ -54,3 +49,6 @@ bgp_slb_passive_range: 10.255.0.0/25
 #For Arista fanout switch deployment only
 fanout_admin_user: "fanoutadminuser"
 fanout_admin_password: "fanoutadminpassword"
+
+#For snappi specific entry
+secret_group_vars: {snappi_api_server: {user: admin, password: admin, rest_port: 443, session_id: "None"}}
