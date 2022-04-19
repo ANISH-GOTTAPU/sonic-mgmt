@@ -139,10 +139,11 @@ def intfs_for_test(duthosts, enum_rand_one_per_hwsku_frontend_hostname, enum_fro
 
 
 @pytest.fixture(scope="module")
-def common_setup_teardown(duthosts, ptfhost, enum_rand_one_per_hwsku_frontend_hostname):
+def common_setup_teardown(duthosts, ptfhost, enum_rand_one_per_hwsku_frontend_hostname, enum_frontend_asic_index, tbinfo):
     try:
         duthost = duthosts[enum_rand_one_per_hwsku_frontend_hostname]
-        router_mac = duthost.shell('sonic-cfggen -d -v \'DEVICE_METADATA.localhost.mac\'')["stdout_lines"][0].decode("utf-8")
+        router_mac = duthost.asic_instance(enum_frontend_asic_index).get_router_mac()
+
         # Copy test files
         ptfhost.copy(src="ptftests", dest="/root")
         logging.info("router_mac {}".format(router_mac))

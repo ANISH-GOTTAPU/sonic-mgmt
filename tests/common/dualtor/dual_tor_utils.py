@@ -615,6 +615,82 @@ def shutdown_t1_tor_intfs(upper_tor_host, lower_tor_host, nbrhosts, tbinfo):
     for eos_host, vm_intf in down_intfs:
         eos_host.no_shutdown(vm_intf)
 
+def _shutdown_tor_downlink_intfs(tor_host, dut_intfs=None):
+    """Helper function for shutting down DUT downlink interfaces connected to fanout.
+
+    Args:
+        tor_host (object): Host object for the ToR DUT.
+        dut_intfs (list, optional): List of DUT interface names, for example: ['Ethernet0', 'Ethernet4']. All 
+            downlink interfaces on DUT will be shutdown. If dut_intfs is not
+            specified, the function will shutdown all DUT downlink interfaces.
+            Defaults to None.
+
+    Returns:
+        dut_intfs (list): interfaces that were shut down on that host device.
+    """
+    if not dut_intfs:
+        # If no interface is specified, shutdown all VLAN ports
+        vlan_intfs = []
+        vlan_member_table = tor_host.get_running_config_facts()['VLAN_MEMBER']
+        for vlan_members in vlan_member_table.values():
+            vlan_intfs.extend(list(vlan_members.keys()))
+
+        dut_intfs = vlan_intfs
+
+    dut_intfs = natsorted(dut_intfs)
+
+    logger.debug('dut_intfs: {}'.format(dut_intfs))
+
+    tor_host.shutdown_multiple(dut_intfs)
+
+    return dut_intfs
+
+
+@pytest.fixture
+def shutdown_upper_tor_downlink_intfs(upper_tor_host):
+    """
+    Fixture for shutting down upper tor downlink interfaces connected to fanout.
+
+    Args:
+        upper_tor_host (object): Host object for upper_tor.
+
+    Yields:
+        function: A function for shutting down upper tor downlink interfaces connected to fanout
+    """
+    shut_intfs = []
+
+    def shutdown(dut_intfs=None):
+        logger.info('Shutdown downlink interfaces in upper_tor')
+        shut_intfs.extend(_shutdown_tor_downlink_intfs(upper_tor_host, dut_intfs))
+
+    yield shutdown
+
+    logger.info('Recover upper_tor downlink interfaces connected to fanout')
+
+    upper_tor_host.no_shutdown_multiple(shut_intfs)
+
+@pytest.fixture
+def shutdown_lower_tor_downlink_intfs(lower_tor_host):
+    """
+    Fixture for shutting down lower tor downlink interfaces connected to fanout.
+
+    Args:
+        lower_tor_host (object): Host object for lower_tor.
+
+    Yields:
+        function: A function for shutting down lower tor downlink interfaces connected to fanout
+    """
+    shut_intfs = []
+
+    def shutdown(dut_intfs=None):
+        logger.info('Shutdown downlink interfaces in lower_tor')
+        shut_intfs.extend(_shutdown_tor_downlink_intfs(lower_tor_host, dut_intfs))
+
+    yield shutdown
+
+    logger.info('Recover lower_tor downlink interfaces connected to fanout')
+
+    lower_tor_host.no_shutdown_multiple(shut_intfs)
 
 def mux_cable_server_ip(dut):
     """Function for retrieving all ip of servers connected to mux_cable
@@ -629,7 +705,7 @@ def mux_cable_server_ip(dut):
     return json.loads(mux_cable_config)
 
 
-def check_tunnel_balance(ptfhost, standby_tor_mac, vlan_mac, active_tor_ip, standby_tor_ip, selected_port, target_server_ip, target_server_port, ptf_portchannel_indices):
+def check_tunnel_balance(ptfhost, standby_tor_mac, vlan_mac, active_tor_ip, standby_tor_ip, selected_port, target_server_ip, target_server_ipv6, target_server_port, ptf_portchannel_indices, check_ipv6=False):
     """
     Function for testing traffic distribution among all avtive T1.
     A test script will be running on ptf to generate traffic to standby interface, and the traffic will be forwarded to
@@ -643,6 +719,7 @@ def check_tunnel_balance(ptfhost, standby_tor_mac, vlan_mac, active_tor_ip, stan
         target_server_ip: The IP address of server for testing. The mux cable connected to this server must be standby
         target_server_port: PTF port indice on which server is connected
         ptf_portchannel_indices: A dict, the mapping from portchannel to ptf port indices
+        check_ipv6: if True, check ipv6 traffic, if False, check ipv4 traffic
     Returns:
         None.
     """
@@ -657,6 +734,9 @@ def check_tunnel_balance(ptfhost, standby_tor_mac, vlan_mac, active_tor_ip, stan
         "ptf_portchannel_indices": ptf_portchannel_indices,
         "hash_key_list": HASH_KEYS
     }
+    if check_ipv6:
+        params["server_ip"] = target_server_ipv6
+
     logging.info("run ptf test for verifying IPinIP tunnel balance")
     timestamp = datetime.now().strftime('%Y-%m-%d-%H:%M:%S')
     log_file = "/tmp/ip_in_ip_tunnel_test.{}.log".format(timestamp)
@@ -733,6 +813,7 @@ def generate_hashed_packet_to_server(ptfadapter, duthost, hash_key, target_serve
             dl_vlan_enable=False,
             ipv6_src=src_ip,
             ipv6_dst=dst_ip,
+            ipv6_hlim=64,
             tcp_sport=sport,
             tcp_dport=dport
         )
@@ -741,7 +822,7 @@ def generate_hashed_packet_to_server(ptfadapter, duthost, hash_key, target_serve
         exp_pkt.set_do_not_care_scapy(scapyall.Ether, "src")
         exp_pkt.set_do_not_care_scapy(scapyall.IPv6, "hlim")
 
-        inner_packet = send_pkt[IPv6].copy()
+        inner_packet = send_pkt[IPv6]
         inner_packet[IPv6].hlim -= 1
         exp_tunnel_pkt = testutils.simple_ipv4ip_packet(
             eth_dst=dst_mac,
@@ -750,6 +831,8 @@ def generate_hashed_packet_to_server(ptfadapter, duthost, hash_key, target_serve
             ip_dst="10.1.0.33",
             inner_frame=inner_packet
         )
+        send_pkt.hlim = 64
+        exp_tunnel_pkt[TCP] = inner_packet[TCP]
         exp_tunnel_pkt = mask.Mask(exp_tunnel_pkt)
         exp_tunnel_pkt.set_do_not_care_scapy(scapyall.Ether, "dst")
         exp_tunnel_pkt.set_do_not_care_scapy(scapyall.Ether, "src")
@@ -1046,13 +1129,12 @@ def show_muxcable_status(duthost):
     """
     Show muxcable status and parse into a dict
     """
-    command = "show muxcable status"
-    output = duthost.shell(command)["stdout_lines"]
-    
+    command = "show muxcable status --json"
+    output = json.loads(duthost.shell(command)["stdout"])
+
     ret = {}
-    for i in range(2, len(output)):
-        port, status, health = output[i].split()
-        ret[port] = {'status': status, 'health': health}
+    for port, muxcable in output['MUX_CABLE'].items(): 
+        ret[port] = {'status': muxcable['STATUS'], 'health': muxcable['HEALTH']}
 
     return ret
 

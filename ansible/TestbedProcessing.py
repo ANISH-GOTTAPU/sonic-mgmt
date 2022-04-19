@@ -404,6 +404,12 @@ def makeLab(data, devices, testbed, outfile):
                         except:
                             print("\t\t" + host + ": ansible_host not found")
 
+                        try:
+                            ansible_hostv6 = dev.get("ansible").get("ansible_hostv6")
+                            entry += "\tansible_hostv6=" + ansible_hostv6.split("/")[0]
+                        except:
+                            print("\t\t" + host + ": ansible_hostv6 not found")
+
                         if ansible_host:
                             try: # get ansible ssh username
                                 ansible_ssh_user = dev.get("ansible").get("ansible_ssh_user")
@@ -584,6 +590,13 @@ def makeLab(data, devices, testbed, outfile):
                         except AttributeError:
                             print("\t\t" + host + " serial not found")
 
+                        try: #get asic_type
+                            asic_type=dev.get("asic_type")
+                            if asic_type is not None:
+                                entry += "\tasic_type=" + str( asic_type )
+                        except AttributeError:
+                            print("\t\t" + host + " asic_type not found")
+
                     toWrite.write(entry + "\n")
                 toWrite.write("\n")
 
@@ -615,6 +628,7 @@ def makeLabYAML(data, devices, testbed, outfile):
     fanoutDict = dict()
     ptfDict = dict()
     dutDict = dict()
+    serverDict = dict()
 
     if "sonic" in deviceGroup['lab']['children']:
         for group in deviceGroup['sonic']['children']:
@@ -634,21 +648,40 @@ def makeLabYAML(data, devices, testbed, outfile):
                         'ptf_host': devices[dut].get("ptf_host"),
                         'serial': devices[dut].get("serial"),
                         'os': devices[dut].get("os"),
-                        'model': devices[dut].get("model")
+                        'model': devices[dut].get("model"),
+                        'asic_type': devices[dut].get("asic_type"),
+                        'syseeprom_info': {"0x21": devices[dut].get("syseeprom_info").get("0x21"),
+                                           "0x22": devices[dut].get("syseeprom_info").get("0x22"),
+                                           "0x23": devices[dut].get("syseeprom_info").get("0x23"),
+                                           "0x24": devices[dut].get("syseeprom_info").get("0x24"),
+                                           "0x25": devices[dut].get("syseeprom_info").get("0x25"),
+                                           "0x26": devices[dut].get("syseeprom_info").get("0x26"),
+                                           "0x2A": devices[dut].get("syseeprom_info").get("0x2A"),
+                                           "0x2B": devices[dut].get("syseeprom_info").get("0x2B"),
+                                           "0xFE": devices[dut].get("syseeprom_info").get("0xFE")}
                         }
                     })
                     sonicDict[group]['hosts'].update(dutDict)
     if "fanout" in deviceGroup['lab']['children']:
-        for fanout in deviceGroup['fanout']['host']:
-            if fanout in devices:
-                fanoutDict.update({fanout:
-                    {'ansible_host': devices[fanout].get("ansible").get("ansible_host"),
-                    'ansible_ssh_user': devices[fanout].get("ansible").get("ansible_ssh_user"),
-                    'ansible_ssh_pass': devices[fanout].get("ansible").get("ansible_ssh_pass"),
-                    'os': devices[fanout].get("os"),
-                    'device_type': devices[fanout].get("device_type")
-                    }
-                })
+        for fanoutType in deviceGroup['fanout']['children']:
+            for fanout in deviceGroup[fanoutType]['host']:
+                if fanout in devices:
+                    fanoutDict.update({fanout:
+                        {'ansible_host': devices[fanout].get("ansible").get("ansible_host"),
+                        'ansible_ssh_user': devices[fanout].get("ansible").get("ansible_ssh_user"),
+                        'ansible_ssh_pass': devices[fanout].get("ansible").get("ansible_ssh_pass"),
+                        'os': devices[fanout].get("os"),
+                        'device_type': devices[fanout].get("device_type")
+                        }
+                    })
+    for server in deviceGroup['servers']['host']:
+        if server in devices:
+            serverDict.update({server:
+                        {'ansible_host': devices[server].get("ansible").get("ansible_host"),
+                        'ansible_ssh_user': devices[server].get("ansible").get("ansible_ssh_user"),
+                        'ansible_ssh_pass': devices[server].get("ansible").get("ansible_ssh_pass"),
+                        'device_type': devices[server].get("device_type")
+                        }})
     if 'ptf' in deviceGroup:
         for ptfhost in deviceGroup['ptf']['host']:
             if ptfhost in testbed:
@@ -667,7 +700,8 @@ def makeLabYAML(data, devices, testbed, outfile):
                                 'fanout': {'hosts': fanoutDict}
                                 }
                             },
-                        'ptf': {'hosts': ptfDict}
+                        'ptf': {'hosts': ptfDict},
+                        'server': {'hosts': serverDict}
                         }
                     }
     })

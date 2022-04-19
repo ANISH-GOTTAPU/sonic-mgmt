@@ -56,7 +56,8 @@ SKIP_ERROR_LOG_SHOW_PLATFORM_TEMP = ['.*ERR pmon#thermalctld.*int\(\) argument m
 SKIP_ERROR_LOG_PSU_ABSENCE = ['.*Error getting sensor data: dps460.*Kernel interface error.*',
                               '.*ERR pmon#psud:.*Fail to read model number: No key PN_VPD_FIELD in.*',
                               '.*ERR pmon#psud:.*Fail to read serial number: No key SN_VPD_FIELD in.*',
-                              '.*ERR pmon#psud:.*Fail to read revision: No key REV_VPD_FIELD in.*']
+                              '.*ERR pmon#psud:.*Fail to read revision: No key REV_VPD_FIELD in.*',
+                              '.*ERR pmon#psud: Failed to read from file /var/run/hw-management/power/psu\d_volt.*']
 
 SKIP_ERROR_LOG_SHOW_PLATFORM_TEMP.extend(SKIP_ERROR_LOG_COMMON)
 SKIP_ERROR_LOG_PSU_ABSENCE.extend(SKIP_ERROR_LOG_COMMON)
@@ -305,7 +306,7 @@ def test_show_platform_temperature_mocked(duthosts, enum_rand_one_per_hwsku_host
 
 
 @pytest.mark.disable_loganalyzer
-def test_thermal_control_load_invalid_format_json(duthosts, enum_rand_one_per_hwsku_hostname):
+def test_thermal_control_load_invalid_format_json(duthosts, enum_rand_one_per_hwsku_hostname, thermal_manager_enabled):
     """
     @summary: Load a thermal policy file with invalid format, check thermal
               control daemon is up and there is an error log printed
@@ -316,7 +317,7 @@ def test_thermal_control_load_invalid_format_json(duthosts, enum_rand_one_per_hw
 
 
 @pytest.mark.disable_loganalyzer
-def test_thermal_control_load_invalid_value_json(duthosts, enum_rand_one_per_hwsku_hostname):
+def test_thermal_control_load_invalid_value_json(duthosts, enum_rand_one_per_hwsku_hostname, thermal_manager_enabled):
     """
     @summary: Load a thermal policy file with invalid value, check thermal
               control daemon is up and there is an error log printed

@@ -18,8 +18,7 @@ from .issue import check_issues
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_CONDITIONS_FILE = 'common/plugins/conditional_mark/tests_mark_conditions.yaml'
-
+DEFAULT_CONDITIONS_FILE = 'common/plugins/conditional_mark/tests_mark_conditions*.yaml'
 
 def pytest_addoption(parser):
     """Add options for the conditional mark plugin.
@@ -37,6 +36,13 @@ def pytest_addoption(parser):
         dest='ignore_conditional_mark',
         default=False,
         help="Ignore the conditional mark plugin. No conditional mark will be added.")
+
+    parser.addoption(
+        '--customize_inventory_file',
+        action='store',
+        dest='customize_inventory_file',
+        default=False,
+        help="Location of your custom inventory file. If it is not specified, and inv_name not in testbed.csv, 'lab' will be used")
 
 def load_conditions(session):
     """Load the content from mark conditions file
@@ -66,9 +72,10 @@ def load_conditions(session):
         pytest.fail('There is no conditions files')
 
     try:
+        logger.debug('Trying to load test mark conditions files: {}'.format(conditions_files))
         for conditions_file in conditions_files:
             with open(conditions_file) as f:
-                logger.debug('Loaded tests skip conditions from {}'.format(conditions_files))
+                logger.debug('Loaded test mark conditions file: {}'.format(conditions_file))
                 conditions = yaml.safe_load(f)
                 for key, value in conditions.items():
                     conditions_list.append({key: value})
@@ -103,7 +110,13 @@ def load_dut_basic_facts(session):
         results['topo_name'] = tbinfo['topo']['name']
 
         dut_name = tbinfo['duts'][0]
-        inv_name = tbinfo['inv_name']
+        if session.config.option.customize_inventory_file:
+            inv_name = session.config.option.customize_inventory_file
+        elif 'inv_name' in tbinfo.keys():
+            inv_name = tbinfo['inv_name']
+        else:
+            inv_name = 'lab'
+
         ansible_cmd = 'ansible -m dut_basic_facts -i ../ansible/{} {} -o'.format(inv_name, dut_name)
 
         raw_output = subprocess.check_output(ansible_cmd.split()).decode('utf-8')
