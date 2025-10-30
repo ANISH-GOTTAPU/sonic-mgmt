@@ -5,7 +5,7 @@ import grpc
 import nic_simulator_grpc_service_pb2 as nic__simulator__grpc__service__pb2
 
 
-class DualTorServiceStub(object):
+class DualToRActiveStub(object):
     """Missing associated documentation comment in .proto file."""
 
     def __init__(self, channel):
@@ -14,33 +14,58 @@ class DualTorServiceStub(object):
         Args:
             channel: A grpc.Channel.
         """
-        self.QueryAdminPortState = channel.unary_unary(
-                '/DualTorService/QueryAdminPortState',
-                request_serializer=nic__simulator__grpc__service__pb2.AdminRequest.SerializeToString,
-                response_deserializer=nic__simulator__grpc__service__pb2.AdminReply.FromString,
-                )
-        self.SetAdminPortState = channel.unary_unary(
-                '/DualTorService/SetAdminPortState',
-                request_serializer=nic__simulator__grpc__service__pb2.AdminRequest.SerializeToString,
-                response_deserializer=nic__simulator__grpc__service__pb2.AdminReply.FromString,
-                )
+        self.QueryAdminForwardingPortState = channel.unary_unary(
+            '/DualToRActive/QueryAdminForwardingPortState',
+            request_serializer=nic__simulator__grpc__service__pb2.AdminRequest.SerializeToString,
+            response_deserializer=nic__simulator__grpc__service__pb2.AdminReply.FromString,
+        )
+        self.SetAdminForwardingPortState = channel.unary_unary(
+            '/DualToRActive/SetAdminForwardingPortState',
+            request_serializer=nic__simulator__grpc__service__pb2.AdminRequest.SerializeToString,
+            response_deserializer=nic__simulator__grpc__service__pb2.AdminReply.FromString,
+        )
         self.QueryOperationPortState = channel.unary_unary(
-                '/DualTorService/QueryOperationPortState',
-                request_serializer=nic__simulator__grpc__service__pb2.OperationRequest.SerializeToString,
-                response_deserializer=nic__simulator__grpc__service__pb2.OperationReply.FromString,
-                )
+            '/DualToRActive/QueryOperationPortState',
+            request_serializer=nic__simulator__grpc__service__pb2.OperationRequest.SerializeToString,
+            response_deserializer=nic__simulator__grpc__service__pb2.OperationReply.FromString,
+        )
+        self.QueryLinkState = channel.unary_unary(
+            '/DualToRActive/QueryLinkState',
+            request_serializer=nic__simulator__grpc__service__pb2.LinkStateRequest.SerializeToString,
+            response_deserializer=nic__simulator__grpc__service__pb2.LinkStateReply.FromString,
+        )
+        self.QueryServerVersion = channel.unary_unary(
+            '/DualToRActive/QueryServerVersion',
+            request_serializer=nic__simulator__grpc__service__pb2.ServerVersionRequest.SerializeToString,
+            response_deserializer=nic__simulator__grpc__service__pb2.ServerVersionReply.FromString,
+        )
+        self.SetDrop = channel.unary_unary(
+            '/DualToRActive/SetDrop',
+            request_serializer=nic__simulator__grpc__service__pb2.DropRequest.SerializeToString,
+            response_deserializer=nic__simulator__grpc__service__pb2.DropReply.FromString,
+        )
+        self.QueryFlapCounter = channel.unary_unary(
+            '/DualToRActive/QueryFlapCounter',
+            request_serializer=nic__simulator__grpc__service__pb2.FlapCounterRequest.SerializeToString,
+            response_deserializer=nic__simulator__grpc__service__pb2.FlapCounterReply.FromString,
+        )
+        self.ResetFlapCounter = channel.unary_unary(
+            '/DualToRActive/ResetFlapCounter',
+            request_serializer=nic__simulator__grpc__service__pb2.FlapCounterRequest.SerializeToString,
+            response_deserializer=nic__simulator__grpc__service__pb2.FlapCounterReply.FromString,
+        )
 
 
-class DualTorServiceServicer(object):
+class DualToRActiveServicer(object):
     """Missing associated documentation comment in .proto file."""
 
-    def QueryAdminPortState(self, request, context):
+    def QueryAdminForwardingPortState(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def SetAdminPortState(self, request, context):
+    def SetAdminForwardingPortState(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -52,81 +77,222 @@ class DualTorServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def QueryLinkState(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
 
-def add_DualTorServiceServicer_to_server(servicer, server):
+    def QueryServerVersion(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def SetDrop(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def QueryFlapCounter(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ResetFlapCounter(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+
+def add_DualToRActiveServicer_to_server(servicer, server):
     rpc_method_handlers = {
-            'QueryAdminPortState': grpc.unary_unary_rpc_method_handler(
-                    servicer.QueryAdminPortState,
-                    request_deserializer=nic__simulator__grpc__service__pb2.AdminRequest.FromString,
-                    response_serializer=nic__simulator__grpc__service__pb2.AdminReply.SerializeToString,
-            ),
-            'SetAdminPortState': grpc.unary_unary_rpc_method_handler(
-                    servicer.SetAdminPortState,
-                    request_deserializer=nic__simulator__grpc__service__pb2.AdminRequest.FromString,
-                    response_serializer=nic__simulator__grpc__service__pb2.AdminReply.SerializeToString,
-            ),
-            'QueryOperationPortState': grpc.unary_unary_rpc_method_handler(
-                    servicer.QueryOperationPortState,
-                    request_deserializer=nic__simulator__grpc__service__pb2.OperationRequest.FromString,
-                    response_serializer=nic__simulator__grpc__service__pb2.OperationReply.SerializeToString,
-            ),
+        'QueryAdminForwardingPortState': grpc.unary_unary_rpc_method_handler(
+            servicer.QueryAdminForwardingPortState,
+            request_deserializer=nic__simulator__grpc__service__pb2.AdminRequest.FromString,
+            response_serializer=nic__simulator__grpc__service__pb2.AdminReply.SerializeToString,
+        ),
+        'SetAdminForwardingPortState': grpc.unary_unary_rpc_method_handler(
+            servicer.SetAdminForwardingPortState,
+            request_deserializer=nic__simulator__grpc__service__pb2.AdminRequest.FromString,
+            response_serializer=nic__simulator__grpc__service__pb2.AdminReply.SerializeToString,
+        ),
+        'QueryOperationPortState': grpc.unary_unary_rpc_method_handler(
+            servicer.QueryOperationPortState,
+            request_deserializer=nic__simulator__grpc__service__pb2.OperationRequest.FromString,
+            response_serializer=nic__simulator__grpc__service__pb2.OperationReply.SerializeToString,
+        ),
+        'QueryLinkState': grpc.unary_unary_rpc_method_handler(
+            servicer.QueryLinkState,
+            request_deserializer=nic__simulator__grpc__service__pb2.LinkStateRequest.FromString,
+            response_serializer=nic__simulator__grpc__service__pb2.LinkStateReply.SerializeToString,
+        ),
+        'QueryServerVersion': grpc.unary_unary_rpc_method_handler(
+            servicer.QueryServerVersion,
+            request_deserializer=nic__simulator__grpc__service__pb2.ServerVersionRequest.FromString,
+            response_serializer=nic__simulator__grpc__service__pb2.ServerVersionReply.SerializeToString,
+        ),
+        'SetDrop': grpc.unary_unary_rpc_method_handler(
+            servicer.SetDrop,
+            request_deserializer=nic__simulator__grpc__service__pb2.DropRequest.FromString,
+            response_serializer=nic__simulator__grpc__service__pb2.DropReply.SerializeToString,
+        ),
+        'QueryFlapCounter': grpc.unary_unary_rpc_method_handler(
+            servicer.QueryFlapCounter,
+            request_deserializer=nic__simulator__grpc__service__pb2.FlapCounterRequest.FromString,
+            response_serializer=nic__simulator__grpc__service__pb2.FlapCounterReply.SerializeToString,
+        ),
+        'ResetFlapCounter': grpc.unary_unary_rpc_method_handler(
+            servicer.ResetFlapCounter,
+            request_deserializer=nic__simulator__grpc__service__pb2.FlapCounterRequest.FromString,
+            response_serializer=nic__simulator__grpc__service__pb2.FlapCounterReply.SerializeToString,
+        ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
-            'DualTorService', rpc_method_handlers)
+        'DualToRActive', rpc_method_handlers)
     server.add_generic_rpc_handlers((generic_handler,))
 
+# This class is part of an EXPERIMENTAL API.
 
- # This class is part of an EXPERIMENTAL API.
-class DualTorService(object):
+
+class DualToRActive(object):
     """Missing associated documentation comment in .proto file."""
 
     @staticmethod
-    def QueryAdminPortState(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(request, target, '/DualTorService/QueryAdminPortState',
-            nic__simulator__grpc__service__pb2.AdminRequest.SerializeToString,
-            nic__simulator__grpc__service__pb2.AdminReply.FromString,
-            options, channel_credentials,
-            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+    def QueryAdminForwardingPortState(request,
+                                      target,
+                                      options=(),
+                                      channel_credentials=None,
+                                      call_credentials=None,
+                                      insecure=False,
+                                      compression=None,
+                                      wait_for_ready=None,
+                                      timeout=None,
+                                      metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/DualToRActive/QueryAdminForwardingPortState',
+                                             nic__simulator__grpc__service__pb2.AdminRequest.SerializeToString,
+                                             nic__simulator__grpc__service__pb2.AdminReply.FromString,
+                                             options, channel_credentials,
+                                             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 
     @staticmethod
-    def SetAdminPortState(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(request, target, '/DualTorService/SetAdminPortState',
-            nic__simulator__grpc__service__pb2.AdminRequest.SerializeToString,
-            nic__simulator__grpc__service__pb2.AdminReply.FromString,
-            options, channel_credentials,
-            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+    def SetAdminForwardingPortState(request,
+                                    target,
+                                    options=(),
+                                    channel_credentials=None,
+                                    call_credentials=None,
+                                    insecure=False,
+                                    compression=None,
+                                    wait_for_ready=None,
+                                    timeout=None,
+                                    metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/DualToRActive/SetAdminForwardingPortState',
+                                             nic__simulator__grpc__service__pb2.AdminRequest.SerializeToString,
+                                             nic__simulator__grpc__service__pb2.AdminReply.FromString,
+                                             options, channel_credentials,
+                                             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 
     @staticmethod
     def QueryOperationPortState(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(request, target, '/DualTorService/QueryOperationPortState',
-            nic__simulator__grpc__service__pb2.OperationRequest.SerializeToString,
-            nic__simulator__grpc__service__pb2.OperationReply.FromString,
-            options, channel_credentials,
-            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+                                target,
+                                options=(),
+                                channel_credentials=None,
+                                call_credentials=None,
+                                insecure=False,
+                                compression=None,
+                                wait_for_ready=None,
+                                timeout=None,
+                                metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/DualToRActive/QueryOperationPortState',
+                                             nic__simulator__grpc__service__pb2.OperationRequest.SerializeToString,
+                                             nic__simulator__grpc__service__pb2.OperationReply.FromString,
+                                             options, channel_credentials,
+                                             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def QueryLinkState(request,
+                       target,
+                       options=(),
+                       channel_credentials=None,
+                       call_credentials=None,
+                       insecure=False,
+                       compression=None,
+                       wait_for_ready=None,
+                       timeout=None,
+                       metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/DualToRActive/QueryLinkState',
+                                             nic__simulator__grpc__service__pb2.LinkStateRequest.SerializeToString,
+                                             nic__simulator__grpc__service__pb2.LinkStateReply.FromString,
+                                             options, channel_credentials,
+                                             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def QueryServerVersion(request,
+                           target,
+                           options=(),
+                           channel_credentials=None,
+                           call_credentials=None,
+                           insecure=False,
+                           compression=None,
+                           wait_for_ready=None,
+                           timeout=None,
+                           metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/DualToRActive/QueryServerVersion',
+                                             nic__simulator__grpc__service__pb2.ServerVersionRequest.SerializeToString,
+                                             nic__simulator__grpc__service__pb2.ServerVersionReply.FromString,
+                                             options, channel_credentials,
+                                             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def SetDrop(request,
+                target,
+                options=(),
+                channel_credentials=None,
+                call_credentials=None,
+                insecure=False,
+                compression=None,
+                wait_for_ready=None,
+                timeout=None,
+                metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/DualToRActive/SetDrop',
+                                             nic__simulator__grpc__service__pb2.DropRequest.SerializeToString,
+                                             nic__simulator__grpc__service__pb2.DropReply.FromString,
+                                             options, channel_credentials,
+                                             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def QueryFlapCounter(request,
+                         target,
+                         options=(),
+                         channel_credentials=None,
+                         call_credentials=None,
+                         insecure=False,
+                         compression=None,
+                         wait_for_ready=None,
+                         timeout=None,
+                         metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/DualToRActive/QueryFlapCounter',
+                                             nic__simulator__grpc__service__pb2.FlapCounterRequest.SerializeToString,
+                                             nic__simulator__grpc__service__pb2.FlapCounterReply.FromString,
+                                             options, channel_credentials,
+                                             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def ResetFlapCounter(request,
+                         target,
+                         options=(),
+                         channel_credentials=None,
+                         call_credentials=None,
+                         insecure=False,
+                         compression=None,
+                         wait_for_ready=None,
+                         timeout=None,
+                         metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/DualToRActive/ResetFlapCounter',
+                                             nic__simulator__grpc__service__pb2.FlapCounterRequest.SerializeToString,
+                                             nic__simulator__grpc__service__pb2.FlapCounterReply.FromString,
+                                             options, channel_credentials,
+                                             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)

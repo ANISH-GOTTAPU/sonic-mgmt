@@ -1,6 +1,7 @@
 """
 Test the feature of container_checker
 """
+import time
 import logging
 
 import pytest
@@ -10,18 +11,19 @@ from tests.common import config_reload
 from tests.common.helpers.assertions import pytest_assert
 from tests.common.helpers.assertions import pytest_require
 from tests.common.helpers.dut_utils import check_container_state
-from tests.common.helpers.dut_utils import clear_failed_flag_and_restart
-from tests.common.helpers.dut_utils import is_hitting_start_limit
 from tests.common.helpers.dut_utils import is_container_running
-from tests.common.plugins.loganalyzer.loganalyzer import LogAnalyzer, LogAnalyzerError
+from tests.common.plugins.loganalyzer.loganalyzer import LogAnalyzer
 from tests.common.utilities import wait_until
 from tests.common.helpers.dut_utils import get_disabled_container_list
+from tests.common.helpers.multi_thread_utils import SafeThreadPoolExecutor
 
 logger = logging.getLogger(__name__)
 
 pytestmark = [
-    pytest.mark.topology('any'),
-    pytest.mark.disable_loganalyzer
+    pytest.mark.topology('any', 't1-multi-asic'),
+    pytest.mark.disable_loganalyzer,
+    pytest.mark.disable_memory_utilization,
+    pytest.mark.dualtor_skip_setup_mux_ports
 ]
 
 CONTAINER_CHECK_INTERVAL_SECS = 1
@@ -44,15 +46,19 @@ def config_reload_after_tests(duthosts, selected_rand_one_per_hwsku_hostname):
     up_bgp_neighbors = {}
     for hostname in selected_rand_one_per_hwsku_hostname:
         duthost = duthosts[hostname]
-        bgp_neighbors = duthost.get_bgp_neighbors()
-        up_bgp_neighbors[duthost] = [ k.lower() for k, v in bgp_neighbors.items() if v["state"] == "established" ]
+        up_bgp_neighbors[duthost] = duthost.get_bgp_neighbors_per_asic("established")
 
     yield
-    for hostname in selected_rand_one_per_hwsku_hostname:
-        duthost = duthosts[hostname]
-        logger.info("Reload config on DuT '{}' ...".format(duthost.hostname))
-        config_reload(duthost)
-        postcheck_critical_processes_status(duthost, up_bgp_neighbors[duthost])
+    with SafeThreadPoolExecutor(max_workers=8) as executor:
+        for hostname in selected_rand_one_per_hwsku_hostname:
+            duthost = duthosts[hostname]
+            logger.info("Reload config on DuT '{}' ...".format(duthost.hostname))
+            executor.submit(config_reload, duthost, safe_reload=True, check_intf_up_ports=True, wait_for_bgp=True)
+
+    with SafeThreadPoolExecutor(max_workers=8) as executor:
+        for hostname in selected_rand_one_per_hwsku_hostname:
+            duthost = duthosts[hostname]
+            executor.submit(postcheck_critical_processes_status, duthost, up_bgp_neighbors[duthost])
 
 
 @pytest.fixture(autouse=True, scope="module")
@@ -125,7 +131,7 @@ def check_all_critical_processes_status(duthost):
       Otherwise it will return False.
     """
     processes_status = duthost.all_critical_process_status()
-    for container_name, processes in processes_status.items():
+    for container_name, processes in list(processes_status.items()):
         if processes["status"] is False or len(processes["exited_critical_process"]) > 0:
             return False
 
@@ -143,7 +149,8 @@ def post_test_check(duthost, up_bgp_neighbors):
       This function will return True if all critical processes are running and
       all BGP sessions are established. Otherwise it will return False.
     """
-    return check_all_critical_processes_status(duthost) and duthost.check_bgp_session_state(up_bgp_neighbors, "established")
+    return check_all_critical_processes_status(duthost) and \
+        duthost.check_bgp_session_state_all_asics(up_bgp_neighbors, "established")
 
 
 def postcheck_critical_processes_status(duthost, up_bgp_neighbors):
@@ -163,6 +170,7 @@ def postcheck_critical_processes_status(duthost, up_bgp_neighbors):
     return wait_until(CONTAINER_RESTART_THRESHOLD_SECS, CONTAINER_CHECK_INTERVAL_SECS, 0,
                       post_test_check, duthost, up_bgp_neighbors)
 
+
 def get_expected_alerting_message(container_name):
     """Generates the expected alerting message from the stopped container.
 
@@ -181,7 +189,8 @@ def get_expected_alerting_message(container_name):
     return expected_alerting_messages
 
 
-def test_container_checker(duthosts, enum_rand_one_per_hwsku_hostname, enum_rand_one_asic_index, enum_dut_feature, tbinfo):
+def test_container_checker(duthosts, enum_rand_one_per_hwsku_hostname, enum_rand_one_asic_index, enum_dut_feature,
+                           tbinfo, disable_container_autorestart):
     """Tests the feature of container checker.
 
     This function will check whether the container names will appear in the Monit
@@ -203,18 +212,27 @@ def test_container_checker(duthosts, enum_rand_one_per_hwsku_hostname, enum_rand
     container_name = asic.get_docker_name(service_name)
 
     loganalyzer = LogAnalyzer(ansible_host=duthost, marker_prefix="container_checker_{}".format(container_name))
-
+    sleep_time = 70
     disabled_containers = get_disabled_container_list(duthost)
 
     skip_containers = disabled_containers[:]
 
-    # Skip 'radv' container on devices whose role is not T0.
-    if tbinfo["topo"]["type"] != "t0":
+    # Skip 'radv' container on devices whose role is not T0/M0.
+    # Skip 'radv' container on dualtor-aa as radv is forcefully killed on dualtor-aa (#13408 in sonic-buildimage)
+    if tbinfo["topo"]["type"] not in ["t0", "m0"] or 'dualtor-aa' in tbinfo['topo']['name']:
         skip_containers.append("radv")
-
     pytest_require(service_name not in skip_containers,
                    "Container '{}' is skipped for testing.".format(container_name))
-
+    feature_autorestart_states = duthost.get_container_autorestart_states()
+    if feature_autorestart_states.get(service_name) == 'enabled':
+        disable_container_autorestart(duthost)
+        time.sleep(30)
+    if not is_container_running(duthost, container_name):
+        logger.info("Container '{}' is not running ...".format(container_name))
+        logger.info("Reload config on DuT as Container is not up '{}' ...".format(duthost.hostname))
+        config_reload(duthost, safe_reload=True)
+        time.sleep(300)
+        sleep_time = 80
     asic.stop_service(service_name)
     logger.info("Waiting until container '{}' is stopped...".format(container_name))
     stopped = wait_until(CONTAINER_STOP_THRESHOLD_SECS,
@@ -226,6 +244,44 @@ def test_container_checker(duthosts, enum_rand_one_per_hwsku_hostname, enum_rand
 
     loganalyzer.expect_regex = get_expected_alerting_message(container_name)
     with loganalyzer:
-        # Wait for 1 minutes such that Monit has a chance to write alerting message into syslog.
-        logger.info("Sleep 1 minutes to wait for the alerting message...")
-        time.sleep(70)
+        # Wait for 70s to 80s  such that Monit has a chance to write alerting message into syslog.
+        logger.info("Sleep '{}'s to wait for the alerting message...".format(sleep_time))
+        time.sleep(sleep_time)
+
+
+def test_container_checker_telemetry(duthosts, rand_one_dut_hostname):
+    """Tests the feature of container checker.
+
+    This function will verify container checker for telemetry.
+
+    Args:
+        duthosts: list of DUTs.
+        rand_one_dut_hostname: Fixture returning dut hostname.
+
+    Returns:
+        None.
+    """
+    duthost = duthosts[rand_one_dut_hostname]
+    container_name = "telemetry"
+
+    # Reload config to restore the container
+    config_reload(duthost, safe_reload=True)
+    # Monit needs 300 seconds to start monitoring the container
+    time.sleep(300)
+
+    # Enable LogAnalyzer
+    loganalyzer = LogAnalyzer(ansible_host=duthost, marker_prefix="container_checker_{}".format(container_name))
+    loganalyzer.expect_regex = get_expected_alerting_message(container_name)
+    marker = loganalyzer.init()
+
+    # Enable telemetry in FEATURE table
+    dut_command = "sonic-db-cli CONFIG_DB hset \"FEATURE|{}\" state enabled".format(container_name)
+    duthost.command(dut_command, module_ignore_errors=True)
+
+    # Monit checks services at 1-minute intervals
+    # Add a 20-second delay to ensure Monit has time to write alert messages to syslog
+    sleep_time = 80
+    logger.info("Sleep '{}'s to wait for the alerting message...".format(sleep_time))
+    time.sleep(sleep_time)
+    analysis = loganalyzer.analyze(marker, fail=False)
+    pytest_assert(analysis['total']['expected_match'] == 0, 'Monit error: {}'.format(analysis['expect_messages']))

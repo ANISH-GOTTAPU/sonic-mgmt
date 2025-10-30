@@ -24,11 +24,11 @@ Then we can get the related information from [```ansible/vtestbed.csv```](/ansib
 ### Access the DUT
 
 ```
-grep 'vlab-01' ./vtestbed.csv                          
+grep 'vlab-01' ./vtestbed.csv
 vms-kvm-t0,vms6-1,t0,docker-ptf,ptf-01,10.250.0.102/24,fec0::ffff:afa:2/64,server_1,VM0100,[vlab-01],veos_vtb,False,Tests virtual switch vm
 ```
 ```
-grep 'vlab-01' -A 4 -B 11 ./vtestbed.yaml 
+grep 'vlab-01' -A 4 -B 11 ./vtestbed.yaml
 
 - conf-name: vms-kvm-t0
   group-name: vms6-1
@@ -45,7 +45,7 @@ grep 'vlab-01' -A 4 -B 11 ./vtestbed.yaml
   auto_recover: 'False'
   comment: Tests virtual switch vm
 ```
-From the two output above, we can see, the content in that two files are same, the files format are different. 
+From the two output above, we can see, the content in that two files are same, the files format are different.
 
 Here we get the information for `vlab-01`.
 
@@ -62,12 +62,27 @@ grep 'vlab-01' -A 2 ./veos_vtb
 ```
 this is the IP for the DUT.
 
+#### DUT user name and password
+The DUT may enable TACACS AAA, if you can't login DUT with local user, please find TACACS user name and password by following steps:
+
+##### User name:
+```
+  1. If secret_group_vars['str']['ansible_ssh_user'] defined, the DUT user name is the value of secret_group_vars['str']['ansible_ssh_user']
+  2. If secret_group_vars['str']['ansible_ssh_user'] not defined, the DUT user name is the value of sonicadmin_user variable defined in group_vars/lab/secrets.yml
+```
+
+##### Password:
+```
+  1. If secret_group_vars['str']['altpasswords'] defined, the DUT user name is the value of secret_group_vars['str']['altpasswords'][0]
+  2. If secret_group_vars['str']['altpasswords'] not defined, the DUT user name is the value of sonicadmin_password variable defined in group_vars/lab/secrets.yml
+```
+
 
 Then, you can use this IP `10.250.0.101` to access that DUT.
 
 ```
 ssh admin@10.250.0.101
-admin@10.250.0.101's password: 
+admin@10.250.0.101's password:
 Linux vlab-01 4.19.0-12-2-amd64 #1 SMP Debian 4.19.152-1 (2020-10-18) x86_64
 You are on
   ____   ___  _   _ _  ____
@@ -114,7 +129,7 @@ server_1:
 ```
 Here, in `children` section, we get a element `vm_host_1`. Then we can get the host for our PTF instance.
 ```
-grep '^vm_host_1' -A 5 ./veos_vtb 
+grep '^vm_host_1' -A 5 ./veos_vtb
 vm_host_1:
   hosts:
     STR-ACS-VSERV-01:
@@ -129,9 +144,9 @@ Let's check.
 Access from IP
 ```
 ssh root@10.250.0.102
-root@10.250.0.102's password: 
+root@10.250.0.102's password:
 Last login: Tue Jul 20 09:50:31 2021 from 10.250.0.1
-root@8d3f7f4475cd:~# 
+root@8d3f7f4475cd:~#
 ```
 Access from host
 ```
@@ -149,8 +164,8 @@ Then we can see, the docker id is identical `8d3f7f4475cd`.
 ## References
 For this article, some of the reference docs as:
 
-- [```Testbed Topologies```](/docs/testbed/README.testbed.Topology.md): Testbed topologies. 
-- [```Testbed Configuration```](/docs/testbed/README.testbed.Config.md): Introduction about Testbed configuration, mainly about the testbed.csv (Will be replaced by testbed.yaml). 
+- [```Testbed Topologies```](/docs/testbed/README.testbed.Topology.md): Testbed topologies.
+- [```Testbed Configuration```](/docs/testbed/README.testbed.Config.md): Introduction about Testbed configuration, mainly about the testbed.csv (Will be replaced by testbed.yaml).
 - [```New Testbed Configuration```](/docs/testbed/README.new.testbed.Configuration.md): Introduction about Testbed configuration, mainly about the Testbed.yaml.
 - [```KVM Testbed Setup```](/docs/testbed/README.testbed.VsSetup.md)
-  
+- [```Testbed TACACS server```](/docs/testbed/README.testbed.TACACS.md)

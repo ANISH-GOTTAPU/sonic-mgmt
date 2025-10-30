@@ -1,85 +1,120 @@
 import pytest
+import logging
 
 from tests.common.utilities import skip_release
-from tests.generic_config_updater.gu_utils import apply_patch
-from tests.generic_config_updater.gu_utils import generate_tmpfile, delete_tmpfile
 
+CONFIG_DB = "/etc/sonic/config_db.json"
+CONFIG_DB_BACKUP = "/etc/sonic/config_db.json.before_gcu_test"
+
+logger = logging.getLogger(__name__)
+
+
+@pytest.fixture(scope="module")
+def selected_dut_hostname(request, rand_one_dut_hostname):
+    """Fixture that returns either `rand_one_dut_hostname` or `rand_one_dut_front_end_hostname`
+    depending on availability."""
+    if "rand_one_dut_front_end_hostname" in request.fixturenames:
+        logger.info("Running on front end duthost")
+        return request.getfixturevalue("rand_one_dut_front_end_hostname")
+    else:
+        logger.info("Running on any type of duthost")
+        return rand_one_dut_hostname
+
+
+# Module Fixture
+@pytest.fixture(scope="module")
+def cfg_facts(duthosts, selected_dut_hostname, selected_asic_index):
+    """
+    Config facts for selected DUT
+    Args:
+        duthosts: list of DUTs.
+        selected_dut_hostname: Hostname of a random chosen dut
+        selected_asic_index: Random selected asic id
+    """
+    duthost = duthosts[selected_dut_hostname]
+    asic_id = selected_asic_index
+    asic_namespace = duthost.get_namespace_from_asic_id(asic_id)
+    return duthost.config_facts(host=duthost.hostname, source="persistent", namespace=asic_namespace)['ansible_facts']
+
+
+@pytest.fixture(scope="module", autouse=True)
+def check_image_version(duthosts, selected_dut_hostname):
+    """Skips this test if the SONiC image installed on DUT is older than 202111
+
+    Args:
+        duthosts: list of DUTs.
+        selected_dut_hostname: Hostname of a random chosen dut
+
+    Returns:
+        None.
+    """
+    duthost = duthosts[selected_dut_hostname]
+    skip_release(duthost, ["201811", "201911", "202012", "202106", "202111"])
+
+
+@pytest.fixture(scope='function')
+def skip_when_buffer_is_dynamic_model(duthost):
+    buffer_model = duthost.shell(
+        'redis-cli -n 4 hget "DEVICE_METADATA|localhost" buffer_model')['stdout']
+    if buffer_model == 'dynamic':
+        pytest.skip("Skip the test, because dynamic buffer config cannot be updated")
+
+
+# Function Fixture
 @pytest.fixture(autouse=True)
-def ignore_expected_loganalyzer_exceptions(duthost, loganalyzer):
+def ignore_expected_loganalyzer_exceptions(duthosts, selected_dut_hostname, loganalyzer):
     """
        Ignore expected yang validation failure during test execution
 
        GCU will try several sortings of JsonPatch until the sorting passes yang validation
 
        Args:
+            duthosts: list of DUTs.
+            selected_dut_hostname: Hostname of a random chosen dut
            loganalyzer: Loganalyzer utility fixture
     """
     # When loganalyzer is disabled, the object could be None
+    duthost = duthosts[selected_dut_hostname]
     if loganalyzer:
-         ignoreRegex = [
-             ".*ERR sonic_yang.*",
-             ".*ERR bgp#bgpcfgd.*Can't update the peer. Only 'admin_status' attribute is supported.*", # test_bgpl
-             ".*ERR bgp#bgpcfgd: BGPAllowListMgr::Received BGP ALLOWED 'SET' message with no prefixes specified: {'NULL': 'NULL'}.*", # test_bgp_prefix
-             ".*ERR.*Failed to start dhcp_relay container.*", # test_dhcp_relay
-             ".*ERR GenericConfigUpdater: Service Validator: Service has been reset.*", # test_dhcp_relay test_syslog
-             ".*Same listen range is attached to peer-group.*", # test_bgp_speaker -> real issue
-             ".*ERR swss[0-9]*#orchagent.*removeLag.*", # autorestart/test_container_autorestart.py test_portchannel_interface
-             ".*ERR swss[0-9]*#intfmgrd: :- setIntfVrf:.*", # test_portchannel_interface
-             ".*ERR teamd.*get_dump: Can't get dump for LAG.*", # test_portchannel_interface
-             ".*ERR kernel.*Reset adapter.*", # test_portchannel_interface replace mtu
-             ".*ERR swss[0-9]*#orchagent: :- getPortOperSpeed.*", # test_portchannel_interface replace mtu
-             ".*ERR.*Failed to apply Json change.*", # validator need updater submodule
-             ".*ERR GenericConfigUpdater: Change Applier: service invoked.*", # validator need updater submodule
-             ".*ERR swss[0-9]*#orchagent.*getResAvailableCounters.*", # test_monitor_config
-             ".*ERR swss[0-9]*#orchagent.*objectTypeGetAvailability.*", # test_monitor_config
-             ".*ERR dhcp_relay[0-9]*#dhcrelay.*", # test_dhcp_relay
-         ]
-         loganalyzer[duthost.hostname].ignore_regex.extend(ignoreRegex)
+        ignoreRegex = [
+            ".*ERR sonic_yang.*",
+            ".*ERR.*Failed to start dhcp_relay.service - dhcp_relay container.*",  # Valid test_dhcp_relay for Bookworm
+            ".*ERR.*Failed to start dhcp_relay container.*",  # Valid test_dhcp_relay
+            # Valid test_dhcp_relay test_syslog
+            ".*ERR GenericConfigUpdater: Service Validator: Service has been reset.*",
+            ".*ERR teamd[0-9].*get_dump: Can't get dump for LAG.*",  # Valid test_portchannel_interface
+            ".*ERR swss[0-9]*#intfmgrd: :- setIntfVrf:.*",  # Valid test_portchannel_interface
+            ".*ERR swss[0-9]*#orchagent.*removeLag.*",  # Valid test_portchannel_interface
+            ".*ERR kernel.*Reset adapter.*",  # Valid test_portchannel_interface replace mtu
+            ".*ERR swss[0-9]*#orchagent: :- getPortOperSpeed.*",  # Valid test_portchannel_interface replace mtu
+            ".*ERR systemd.*Failed to start Host core file uploader daemon.*",  # Valid test_syslog
 
-@pytest.fixture(scope="module", autouse=True)
-def check_image_version(duthost):
-    """Skips this test if the SONiC image installed on DUT is older than 202112
+            # sonic-swss/orchagent/crmorch.cpp
+            ".*ERR swss[0-9]*#orchagent.*getResAvailableCounters.*",  # test_monitor_config
+            ".*ERR swss[0-9]*#orchagent.*objectTypeGetAvailability.*",  # test_monitor_config
+            ".*ERR dhcp_relay[0-9]*#dhcrelay.*",  # test_dhcp_relay
 
-    Args:
-        duthost: DUT host object.
+            # sonic-sairedis/vslib/HostInterfaceInfo.cpp: Need investigation
+            ".*ERR syncd[0-9]*#syncd.*tap2veth_fun: failed to write to socket.*",   # test_portchannel_interface tc2
+            ".*ERR.*'apply-patch' executed failed.*",  # negative cases that are expected to fail
 
-    Returns:
-        None.
+            # Ignore errors from k8s config test
+            ".*ERR ctrmgrd.py: Refer file.*",
+            ".*ERR ctrmgrd.py: Join failed.*"
+        ]
+        loganalyzer[duthost.hostname].ignore_regex.extend(ignoreRegex)
+
+
+@pytest.fixture(scope="session")
+def skip_if_packet_trimming_not_supported(duthost):
     """
-    skip_release(duthost, ["201811", "201911", "202012", "202106", "202111"])
-
-@pytest.fixture(scope="module")
-def cfg_facts(duthosts, rand_one_dut_hostname):
+    Check if the current device supports packet trimming feature.
     """
-    Config facts for selected DUT
-    Args:
-        duthosts: list of DUTs.
-        rand_selected_dut: The fixture returns a randomly selected DuT.
-    """
-    duthost = duthosts[rand_one_dut_hostname]
-    return duthost.config_facts(host=duthost.hostname, source="persistent")['ansible_facts']
+    platform = duthost.facts["platform"]
+    logger.info(f"Checking packet trimming support for platform: {platform}")
 
-
-@pytest.fixture(scope="module", autouse=True)
-def verify_configdb_with_empty_input(duthost):
-    """Fail immediately if empty input test failure
-
-    Args:
-        duthost: Hostname of DUT.
-
-    Returns:
-        None.
-    """
-    json_patch = []
-    tmpfile = generate_tmpfile(duthost)
-
-    try:
-        output = apply_patch(duthost, json_data=json_patch, dest_file=tmpfile)
-        if output['rc'] or "Patch applied successfully" not in output['stdout']:
-            pytest.fail(
-                "SETUP FAILURE: ConfigDB fail to validate Yang. rc:{} msg:{}"
-                .format(output['rc'], output['stdout'])
-            )
-
-    finally:
-        delete_tmpfile(duthost, tmpfile)
+    # Check if the SWITCH_TRIMMING_CAPABLE capability is true
+    trimming_capable = duthost.command('redis-cli -n 6 HGET "SWITCH_CAPABILITY|switch" "SWITCH_TRIMMING_CAPABLE"')[
+        'stdout'].strip()
+    if trimming_capable.lower() != 'true':
+        pytest.skip("Packet trimming is not supported")

@@ -1,10 +1,13 @@
+import json
 import logging
 import os
 import re
 import time
 import pprint
+import shutil
 
 from . import system_msg_handler
+from .bug_handler_helper import get_bughandler_instance, BugHandler
 
 from .system_msg_handler import AnsibleLogAnalyzer as ansible_loganalyzer
 from os.path import join, split
@@ -32,15 +35,17 @@ class DisableLogrotateCronContext:
         """
         Disable logrotate cron task / systemd timer and make sure the running logrotate is stopped.
         """
-        # Disable logrotate systemd timer
-        self.ansible_host.command("systemctl stop logrotate.timer")
-        # Disable logrotate cron task
-        self.ansible_host.command("sed -i 's/^/#/g' /etc/cron.d/logrotate")
+        # Disable logrotate systemd timer by best effort. The reason is that logrotate.timer service is not
+        # available in older version like 201911.
+        self.ansible_host.command("systemctl stop logrotate.timer", module_ignore_errors=True)
+        # Disable logrotate cron task. Bullseye-based images will not have this file, so ignore any errors.
+        self.ansible_host.command("sed -i 's/^/#/g' /etc/cron.d/logrotate", module_ignore_errors=True)
         logging.debug("Waiting for logrotate from previous cron task or systemd timer run to finish")
         # Wait for logrotate from previous cron task run to finish
         end = time.time() + 60
         while time.time() < end:
-            # Verify for exception because self.ansible_host automatically handle command return codes and raise exception for none zero code
+            # Verify for exception because self.ansible_host automatically handle command return codes
+            # and raise exception for none zero code
             try:
                 self.ansible_host.command("pgrep -f logrotate")
             except Exception:
@@ -55,21 +60,25 @@ class DisableLogrotateCronContext:
         """
         Restore logrotate cron task and systemd timer.
         """
-        # Enable logrotate cron task back
-        self.ansible_host.command("sed -i 's/^#//g' /etc/cron.d/logrotate")
-        # Enable logrotate systemd timer
-        self.ansible_host.command("systemctl start logrotate.timer")
+        # Enable logrotate cron task back. Bullseye-based images will not have this file, so ignore any errors.
+        self.ansible_host.command("sed -i 's/^#//g' /etc/cron.d/logrotate", module_ignore_errors=True)
+        # Enable logrotate systemd timer by best effort. The reason is that logrotate.timer service is not
+        # available in older version like 201911.
+        self.ansible_host.command("systemctl start logrotate.timer", module_ignore_errors=True)
 
 
 class LogAnalyzerError(Exception):
     """Raised when loganalyzer found matches during analysis phase."""
     def __repr__(self):
-        return pprint.pformat(self.message)
+        return pprint.pformat("Log Analyzer Error- Matches found, please check errors in log")
 
 
 class LogAnalyzer:
-    def __init__(self, ansible_host, marker_prefix, dut_run_dir="/tmp", start_marker=None, additional_files={}):
+    def __init__(self, ansible_host, marker_prefix, request=None, dut_run_dir="/tmp", start_marker=None,
+                 additional_files={},
+                 bughandler: BugHandler = get_bughandler_instance({"type": "noop"})):
         self.ansible_host = ansible_host
+        ansible_host.loganalyzer = self
         self.dut_run_dir = dut_run_dir
         self.extracted_syslog = os.path.join(self.dut_run_dir, "syslog")
         self.marker_prefix = marker_prefix.replace(' ', '_')
@@ -83,19 +92,29 @@ class LogAnalyzer:
         self.expected_matches_target = 0
         self._markers = []
         self.fail = True
+        self.store_la_logs = False
 
         self.additional_files = list(additional_files.keys())
         self.additional_start_str = list(additional_files.values())
+        self.request = request
+        if self.request is not None and getattr(self.request, "config", None) is not None:
+            # override the fail and store_la_logs if they are set in the request config options
+            self.fail = not (self.request.config.getoption("--ignore_la_failure"))
+            self.store_la_logs = self.request.config.getoption("--store_la_logs")
+
+        self._la_logs_dir = "/tmp/loganalyzer/{}".format(self.ansible_host.hostname)
+        self.bughandler = bughandler
 
     def _add_end_marker(self, marker):
         """
         @summary: Add stop marker into syslog on the DUT.
 
-        @return: True for successfull execution False otherwise
+        @return: True for successful execution False otherwise
         """
         self.ansible_host.copy(src=ANSIBLE_LOGANALYZER_MODULE, dest=os.path.join(self.dut_run_dir, "loganalyzer.py"))
 
-        cmd = "python {run_dir}/loganalyzer.py --action add_end_marker --run_id {marker}".format(run_dir=self.dut_run_dir, marker=marker)
+        cmd = "python {run_dir}/loganalyzer.py --action add_end_marker --run_id {marker}"\
+            .format(run_dir=self.dut_run_dir, marker=marker)
 
         logging.debug("Adding end marker '{}'".format(marker))
         self.ansible_host.command(cmd)
@@ -123,21 +142,83 @@ class LogAnalyzer:
     def _verify_log(self, result):
         """
         Verify that total match and expected missing match equals to zero or raise exception otherwise.
-        Verify that expected_match is not equal to zero when there is configured expected regexp in self.expect_regex list
+        Verify that expected_match is not equal to zero
+        when there is configured expected regexp in self.expect_regex list
         """
         if not result:
             raise LogAnalyzerError("Log analyzer failed - no result.")
-        if result["total"]["match"] != 0 or result["total"]["expected_missing_match"] != 0:
-            raise LogAnalyzerError(result)
+        else:
+            result_str = self._results_repr(result)
+            if result["total"]["match"] != 0 or result["total"]["expected_missing_match"] != 0:
+                raise LogAnalyzerError(result_str)
 
-        # Check for negative case
-        if self.expect_regex and result["total"]["expected_match"] == 0:
-            raise LogAnalyzerError(result)
+            # Check for negative case
+            if self.expect_regex and result["total"]["expected_match"] == 0:
+                err_parse = 'Log Analyzer failed parsing expected messages\n'
+                raise LogAnalyzerError(err_parse + result_str)
 
-        # if the number of expected matches is provided
-        if (self.expect_regex and (self.expected_matches_target > 0)
-           and result["total"]["expected_match"] != self.expected_matches_target):
-            raise LogAnalyzerError(result)
+            # if the number of expected matches is provided
+            if (self.expect_regex and (self.expected_matches_target > 0) and
+                    result["total"]["expected_match"] != self.expected_matches_target):
+                err_target = "Log analyzer expected {} messages but found only {}\n"\
+                    .format(self.expected_matches_target, result["total"]["expected_match"])
+                raise LogAnalyzerError(err_target + result_str)
+
+    def save_matching_errors(self, result_log_errors):
+        """
+        save all the log errors in a file on the player.
+        :param result_log_errors: list of all the errors we found in the log - result["match_messages"].values()
+        """
+        if result_log_errors:
+            log_errors = ''
+            for error_list in result_log_errors:
+                log_errors += ''.join(error_list)
+
+            os.makedirs(self._la_logs_dir, exist_ok=True)
+            cur_time = time.strftime("%d_%m_%Y_%H_%M_%S", time.gmtime())
+            cleaned_marker_prefix = re.sub(r'[\\/\'"<>|]', '_', self.marker_prefix)
+            file_path = os.path.join(self._la_logs_dir, "log_error_{}_{}.json".format(cleaned_marker_prefix, cur_time))
+            self.write_errors_to_file(file_path, log_errors)
+
+    @staticmethod
+    def write_errors_to_file(file_path, log_errors):
+        """Write error-lines to a file that can be read by the bug-handler."""
+        logging.info("Log errors will be saved in file: {}".format(file_path))
+        if not isinstance(log_errors, str):  # so log_errors is a list of strings
+            log_errors = '\n'.join(log_errors)
+        data = {"log_errors": log_errors}
+        with open(file_path, "w+") as file:
+            json.dump(data, file)
+
+    def _results_repr(self, result):
+        """
+        @summary: The function converts error analysis dictionary to a readable string format.
+        @param result: Dictionary returned from analyze() function
+        """
+        result_str = ''
+        total_dic = result["total"]
+        msg_dic = result["match_messages"]
+        expect_dic = result['expect_messages']
+        unused_list = result['unused_expected_regexp']
+
+        for msg_type, counter in list(total_dic.items()):
+            result_str += msg_type + ": " + str(counter) + "\n"
+
+        if any(msg_dic.values()):
+            result_str += "\nMatch Messages:\n"
+            for match in msg_dic:
+                result_str += '\n'.join(msg_dic[match])
+
+        if any(expect_dic.values()):
+            result_str += "\nExpected Messages:\n"
+            for expect in expect_dic:
+                result_str += '\n'.join(expect_dic[expect])
+
+        if unused_list:
+            result_str += "\nExpected Messages that are missing:\n"
+            result_str += '\n'.join(unused_list)
+
+        return result_str
 
     def update_marker_prefix(self, marker_prefix):
         """
@@ -148,13 +229,19 @@ class LogAnalyzer:
 
     def load_common_config(self):
         """
-        @summary: Load regular expressions from common files, which are localted in folder with legacy loganalyzer.
-                  Loaded regular expressions are used by "analyze" method to match expected text in the downloaded log file.
+        @summary: Load regular expressions from common files, which are located in folder with legacy loganalyzer.
+                  Loaded regular expressions are used by "analyze" method
+                  to match expected text in the downloaded log file.
         """
         self.match_regex = self.ansible_loganalyzer.create_msg_regex([COMMON_MATCH])[1]
         self.ignore_regex = self.ansible_loganalyzer.create_msg_regex([COMMON_IGNORE])[1]
         self.expect_regex = self.ansible_loganalyzer.create_msg_regex([COMMON_EXPECT])[1]
         logging.debug('Loaded common config.')
+
+        if self.request:
+            extended_ignore_list = self.request.session.config.cache.get("extended_ignore_list", [])
+            self.ignore_regex.extend(extended_ignore_list)
+            logging.info(f"Loaded extend ignore config: {extended_ignore_list}")
 
     def parse_regexp_file(self, src):
         """
@@ -178,7 +265,7 @@ class LogAnalyzer:
             call_result = callback(*args, **kwargs)
         except Exception as err:
             logging.error("Error during callback execution:\n{}".format(err))
-            logging.debug("Log analysis result\n".format(self.analyze(marker, fail=fail)))
+            logging.debug("Log analysis result:\n{}".format(self.analyze(marker, fail=fail)))
             raise err
         self.analyze(marker, fail=fail)
 
@@ -188,7 +275,7 @@ class LogAnalyzer:
         """
         @summary: Add start marker into log files on the DUT.
 
-        @return: True for successfull execution False otherwise
+        @return: True for successful execution False otherwise
         """
         logging.debug("Loganalyzer init")
 
@@ -201,12 +288,48 @@ class LogAnalyzer:
 
         return self._setup_marker(log_files=log_files)
 
+    def add_start_ignore_mark(self, log_files=None):
+        """
+        Adds the start ignore marker to the log files
+        """
+        # We copy 'loganalyzer.py' to /tmp dir during loganalyzer initialization,
+        # but the file could be auto removed by rebooting device,
+        # always copy script to make sure the marker can be added successfully.
+        self.ansible_host.copy(src=ANSIBLE_LOGANALYZER_MODULE, dest=os.path.join(self.dut_run_dir, "loganalyzer.py"))
+        add_start_ignore_mark = ".".join((self.marker_prefix, time.strftime("%Y-%m-%d-%H:%M:%S", time.gmtime())))
+        cmd = "python {run_dir}/loganalyzer.py --action add_start_ignore_mark --run_id {add_start_ignore_mark}"\
+            .format(run_dir=self.dut_run_dir, add_start_ignore_mark=add_start_ignore_mark)
+        if log_files:
+            cmd += " --logs {}".format(','.join(log_files))
+
+        logging.debug("Adding start ignore marker '{}'".format(add_start_ignore_mark))
+        self.ansible_host.command(cmd)
+        self._markers.append(add_start_ignore_mark)
+
+    def add_end_ignore_mark(self, log_files=None):
+        """
+        Adds the end ignore marker to the log files
+        """
+        # We copy 'loganalyzer.py' to /tmp dir during loganalyzer initialization,
+        # but the file could be auto removed by rebooting device,
+        # always copy script to make sure the marker can be added successfully.
+        self.ansible_host.copy(src=ANSIBLE_LOGANALYZER_MODULE, dest=os.path.join(self.dut_run_dir, "loganalyzer.py"))
+        marker = self._markers.pop()
+        cmd = "python {run_dir}/loganalyzer.py --action add_end_ignore_mark --run_id {marker}"\
+            .format(run_dir=self.dut_run_dir, marker=marker)
+        if log_files:
+            cmd += " --logs {}".format(','.join(log_files))
+
+        logging.debug("Adding end ignore marker '{}'".format(marker))
+        self.ansible_host.command(cmd)
+
     def _setup_marker(self, log_files=None):
         """
         Adds the marker to the log files
         """
         start_marker = ".".join((self.marker_prefix, time.strftime("%Y-%m-%d-%H:%M:%S", time.gmtime())))
-        cmd = "python {run_dir}/loganalyzer.py --action init --run_id {start_marker}".format(run_dir=self.dut_run_dir, start_marker=start_marker)
+        cmd = "python {run_dir}/loganalyzer.py --action init --run_id {start_marker}"\
+            .format(run_dir=self.dut_run_dir, start_marker=start_marker)
         if log_files:
             cmd += " --logs {}".format(','.join(log_files))
 
@@ -214,15 +337,21 @@ class LogAnalyzer:
         self.ansible_host.command(cmd)
         return start_marker
 
-    def analyze(self, marker, fail=True):
+    def analyze(self, marker, fail=None, maximum_log_length=None, store_la_logs=None):
         """
-        @summary: Extract syslog logs based on the start/stop markers and compose one file. Download composed file, analyze file based on defined regular expressions.
+        @summary: Extract syslog logs based on the start/stop markers and compose one file.
+                  Download composed file, analyze file based on defined regular expressions.
 
         @param marker: Marker obtained from "init" method.
         @param fail: Flag to enable/disable raising exception when loganalyzer find error messages.
-
-        @return: If "fail" is False - return dictionary of parsed syslog summary, if dictionary can't be parsed - return empty dictionary. If "fail" is True and if found match messages - raise exception.
+        @param maximum_log_length: The long message (length > maximum_log_length) will be skipped.
+        @param store_la_logs: Flag to save the match lines
+        @return: If "fail" is False - return dictionary of parsed syslog summary,
+                 if dictionary can't be parsed - return empty dictionary.
+                 If "fail" is True and if found match messages - raise exception.
         """
+        fail = self.fail if fail is None else fail
+        store_la_logs = self.store_la_logs if store_la_logs is None else store_la_logs
         logging.debug("Loganalyzer analyze")
         analyzer_summary = {"total": {"match": 0, "expected_match": 0, "expected_missing_match": 0},
                             "match_files": {},
@@ -276,7 +405,9 @@ class LogAnalyzer:
         logging.debug('    match_regex="{}"'.format(match_messages_regex.pattern if match_messages_regex else ''))
         logging.debug('    ignore_regex="{}"'.format(ignore_messages_regex.pattern if ignore_messages_regex else ''))
         logging.debug('    expect_regex="{}"'.format(expect_messages_regex.pattern if expect_messages_regex else ''))
-        analyzer_parse_result = self.ansible_loganalyzer.analyze_file_list(file_list, match_messages_regex, ignore_messages_regex, expect_messages_regex)
+        analyzer_parse_result = self.ansible_loganalyzer.analyze_file_list(
+            file_list, match_messages_regex, ignore_messages_regex, expect_messages_regex,
+            maximum_log_length=maximum_log_length)
         # Print file content and remove the file
         for folder in file_list:
             with open(folder) as fo:
@@ -286,11 +417,12 @@ class LogAnalyzer:
         expected_lines_total = []
         unused_regex_messages = []
 
-        for key, value in analyzer_parse_result.items():
+        for key, value in list(analyzer_parse_result.items()):
             matching_lines, expecting_lines = value
             analyzer_summary["total"]["match"] += len(matching_lines)
             analyzer_summary["total"]["expected_match"] += len(expecting_lines)
-            analyzer_summary["match_files"][key] = {"match": len(matching_lines), "expected_match": len(expecting_lines)}
+            analyzer_summary["match_files"][key] = {"match": len(matching_lines),
+                                                    "expected_match": len(expecting_lines)}
             analyzer_summary["match_messages"][key] = matching_lines
             analyzer_summary["expect_messages"][key] = expecting_lines
             expected_lines_total.extend(expecting_lines)
@@ -305,11 +437,22 @@ class LogAnalyzer:
         analyzer_summary["total"]["expected_missing_match"] = len(unused_regex_messages)
         analyzer_summary["unused_expected_regexp"] = unused_regex_messages
         logging.debug("Analyzer summary: {}".format(pprint.pformat(analyzer_summary)))
-
+        try:
+            shutil.rmtree(self._la_logs_dir)
+        except FileNotFoundError:
+            pass
+        if analyzer_summary["total"]["match"] != 0 and store_la_logs:
+            self.save_matching_errors(analyzer_summary["match_messages"].values())
         if fail:
             self._verify_log(analyzer_summary)
+        hostname = self.ansible_host.hostname
+        if isinstance(self.bughandler, BugHandler):
+            self.bughandler.bug_handler_wrapper(analyzers={hostname: self},
+                                                la_results={hostname: analyzer_summary},
+                                                duthosts=[self.ansible_host])
         else:
-            return analyzer_summary
+            logging.warning("Skip bug handler execution because it is not a valid BugHandler")
+        return analyzer_summary
 
     def save_extracted_log(self, dest):
         """
