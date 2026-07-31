@@ -5,13 +5,14 @@ import time
 from tests.common.helpers.assertions import pytest_assert, pytest_require
 from tests.common.fixtures.tacacs import tacacs_creds     # noqa F401
 from tests.common.helpers.tacacs.tacacs_helper import setup_local_user
-from tests.common.utilities import paramiko_ssh
+from tests.common.utilities import paramiko_ssh, wait_until
 from tests.common.fixtures.tacacs import get_aaa_sub_options_value
 
 pytestmark = [
     pytest.mark.disable_loganalyzer,
     pytest.mark.topology("any"),
     pytest.mark.device_type("vs"),
+    pytest.mark.device_type("vpp"),
 ]
 
 HOSTSERVICE_RELOADING_COMMAND = "sudo systemctl restart hostcfgd.service"
@@ -67,10 +68,23 @@ def modify_templates(duthost, tacacs_creds, creds):     # noqa F811
 
     sonic_admin_alt_password = duthost.host.options['variable_manager']._hostvars[duthost.hostname].get(
         "ansible_altpassword")
-    # Duthost shell not support run command with J2 template in command text.
-    admin_session = paramiko_ssh(ip_address=dut_ip, username=creds['sonicadmin_user'],
-                                 passwords=[creds['sonicadmin_password'], sonic_admin_alt_password]
-                                 + creds["ansible_altpasswords"])
+    # Connect over SSH as admin (duthost.shell can't run commands containing J2 templates).
+    # Retry the login for up to 1 minute instead of once, because the AAA config change above is
+    # applied asynchronously and may take a little time to take effect, during which the admin
+    # login can be transiently rejected.
+    admin_session_holder = {}
+
+    def _open_admin_session():
+        admin_session_holder['session'] = paramiko_ssh(
+            ip_address=dut_ip, username=creds['sonicadmin_user'],
+            passwords=[creds['sonicadmin_password'], sonic_admin_alt_password]
+            + creds["ansible_altpasswords"])
+        return True
+
+    pytest_assert(
+        wait_until(60, 5, 0, _open_admin_session),
+        "Failed to establish admin SSH session to {} after AAA change".format(dut_ip))
+    admin_session = admin_session_holder['session']
 
     # Backup and change /usr/share/sonic/templates/pam_limits.j2
     additional_content = "session  required  pam_limits.so"
@@ -78,7 +92,18 @@ def modify_templates(duthost, tacacs_creds, creds):     # noqa F811
                     additional_content, hwsku, type)
 
     # Backup and change /usr/share/sonic/templates/limits.conf.j2
-    additional_content = "{0}  hard  maxlogins  1".format(user)
+
+    # Starting with PAM 1.7.0 (present in Debian Trixie and newer), the
+    # pam_limits module is relying on systemd-logind for limiting logins.
+    # However, one of the sessions is used as a systemd manager session,
+    # so the actual count needs to be one higher. This is described a bit
+    # in the commit below:
+    #
+    # https://github.com/linux-pam/linux-pam/commit/f5db2603d2ce80a610a247e06bdd49c4eb091a7d#diff-f454153035e14468d4263c7bc9b85ec0e192be1d16080b65ae4974a74846de25R282-R288
+    if duthost.dut_basic_facts()['ansible_facts']['dut_basic_facts'].get("sonic_os_version") >= 13:
+        additional_content = "{0}  hard  maxlogins  2".format(user)
+    else:
+        additional_content = "{0}  hard  maxlogins  1".format(user)
     modify_template(admin_session, LIMITS_CONF_TEMPLATE_PATH,
                     additional_content, hwsku, type)
 
@@ -169,7 +194,7 @@ def test_ssh_limits(duthosts, rand_one_dut_hostname, tacacs_creds, setup_limit):
 
     logging.debug("Login session 1 result:\n{0}\n".format(login_message_1))
     pytest_assert("There were too many logins for" not in login_message_1,
-                  "The first login was rejected due to too many logins")
+                  "The first login was unexpectedly rejected due to too many logins")
 
     # The second session will be disconnect by device
     ssh_session_2 = paramiko_ssh(dut_ip, local_user, local_user_password)

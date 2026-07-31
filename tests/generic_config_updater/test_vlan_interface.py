@@ -413,13 +413,14 @@ def vlan_interface_tc1_remove(duthost, vlan_info):
         delete_tmpfile(duthost, tmpfile)
 
 
+@pytest.mark.enable_monit_refresh
 def test_vlan_interface_tc1_suite(rand_selected_dut, vlan_info, loganalyzer, tbinfo, duthost):
     if loganalyzer:
         if tbinfo["topo"]["name"] == "m0-2vlan":
-            loganalyzer[duthost.hostname].ignore_regex.extend(IGNORE_REG_LIST)
-        loganalyzer[duthost.hostname].ignore_regex.extend([
-            ".*ERR GenericConfigUpdater: Change Applier: service invoked: \
-        generic_config_updater.services_validator.vlanintf_validator failed.*"
+            loganalyzer[rand_selected_dut.hostname].ignore_regex.extend(IGNORE_REG_LIST)
+        loganalyzer[rand_selected_dut.hostname].ignore_regex.extend([
+            ".*ERR GenericConfigUpdater: Change Applier: service invoked: "
+            "generic_config_updater.services_validator.vlanintf_validator failed.*"
         ])
     vlan_interface_tc1_add_duplicate(rand_selected_dut, vlan_info)
     vlan_interface_tc1_xfail(rand_selected_dut, vlan_info)
